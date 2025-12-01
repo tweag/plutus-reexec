@@ -20,6 +20,14 @@ TESTNET_MAGIC="42"
 # Main
 # ------------------------------------------------------------------------------
 
+# TODO: Make the script idempotent.
+#
+# This script is currently not idempotent. Running "cardano-testnet" multiple
+# times errors out. Investigate why?
+#
+# Removing the $OUTPUT_DIR and re-running the script will work and bypass one
+# failure. But removing the $OUTPUT_DIR everytime may not be the ideal workflow.
+
 $CARDANO_TESTNET cardano \
     --num-pool-nodes $NUM_POOL_NODES \
     --conway-era \

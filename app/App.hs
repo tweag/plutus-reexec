@@ -71,6 +71,7 @@ main = do
     -- TODO: Make the predicate depend on the config.
     let predicate = const True
     streamChainSyncEvents socketPath networkId points -- Stream m ChainSyncEvent
+    -- TODO: Try to replace "concatMap" with "unfoldEach".
         & Stream.concatMap (Stream.fromList . getEventTransactions) -- Stream m Transaction
         -- TODO: Add a filter to the streaming pipeline to filter things out based
         --       on the predicate.

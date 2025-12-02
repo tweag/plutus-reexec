@@ -44,6 +44,13 @@ the first one it finds. The client and the node are not always in sync and the
 client might not know the exact point the node is on. So the client may give
 something like: [p10, p5, p2, genesis]
 
+NOTE: Stream Nesting
+
+There are 2 types of streams in streamly: Stream and StreamK. StreamK should
+ideally be used instead of Stream when there are nested operations. Stream does
+not perform well with deep nesting as fusion breaks. Alternatively, we can use
+unfoldEach for nesting streams while supporting fusion.
+
 -}
 
 --------------------------------------------------------------------------------

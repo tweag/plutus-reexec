@@ -14,11 +14,12 @@ import Cardano.Api qualified as C
 -- import Cardano.Slotting.Block (BlockNo (..))
 -- import Cardano.Slotting.Slot (WithOrigin (At, Origin), withOrigin)
 import Control.Exception (Exception, throw)
-import Control.Monad.IO.Class (liftIO)
 import GHC.Generics (Generic)
 -- import GHC.Word (Word64)
 import Streamly.Data.Stream.Prelude (Stream)
 import Streamly.Data.Stream.Prelude qualified as Stream
+import Control.Concurrent (forkIO)
+import Control.Monad (void)
 
 --------------------------------------------------------------------------------
 -- Notes
@@ -78,7 +79,7 @@ subscribeToChainSyncEvents socketPath networkId points callback =
       }
     C.LocalNodeClientProtocols
       { C.localChainSyncClient =
-          C.LocalChainSyncClient $ C.ChainSyncClient $ chainSyncClient
+          C.LocalChainSyncClient $ C.ChainSyncClient chainSyncClient
       , C.localStateQueryClient = Nothing
       , C.localTxMonitoringClient = Nothing
       , C.localTxSubmissionClient = Nothing
@@ -103,7 +104,9 @@ subscribeToChainSyncEvents socketPath networkId points callback =
         , recvMsgIntersectNotFound = throw NoIntersectionFound
         }
 
-    actionOnAwait = pure ()
+    actionOnAwait = 
+      putStrLn "Waiting..."
+      -- pure ()
 
     -- This is required to go to the next block. Essentially forward the
     -- pointer.
@@ -128,4 +131,4 @@ streamChainSyncEvents
   -- ^ The points on the chain to start streaming from
   -> Stream IO ChainSyncEvent
 streamChainSyncEvents s n p =
-  Stream.fromCallback (liftIO . subscribeToChainSyncEvents s n p)
+  Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents s n p)

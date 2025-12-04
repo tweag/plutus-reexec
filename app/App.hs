@@ -6,6 +6,7 @@ import Cardano.Api (
     ChainPoint (..),
  )
 import Cardano.Api qualified as C
+import Control.Monad (unless)
 import Data.Function ((&))
 import Data.Map qualified as Map
 import Data.Set qualified as Set
@@ -15,6 +16,7 @@ import Options.Applicative
 import PSR.ConfigMap qualified as CM
 import PSR.Streaming
 import Streamly.Data.Fold.Prelude qualified as Fold
+import Streamly.Data.Scanl.Prelude qualified as Scanl
 import Streamly.Data.Stream.Prelude qualified as Stream
 import System.Exit (exitFailure)
 
@@ -37,7 +39,8 @@ shouldTrackTransaction conn confPolicySet cp (Transaction _ tx) =
         then pure True
         else isUsedInSpendingMode
   where
-    hasIntersectionWithConf = not . Set.null . Set.intersection (Map.keysSet confPolicySet)
+    hasIntersectionWithConf :: Set.Set C.PolicyId -> Bool
+    hasIntersectionWithConf = not . Map.null . Map.restrictKeys confPolicySet
 
     isUsedInMintingMode =
         hasIntersectionWithConf $ getPolicySet $ getMintedValue tx
@@ -45,10 +48,35 @@ shouldTrackTransaction conn confPolicySet cp (Transaction _ tx) =
     isUsedInSpendingMode :: IO Bool
     isUsedInSpendingMode = do
         umap <- queryInputUtxoMap conn cp tx
+        unless (Map.null umap) $ do
+            putStrLn "\nFound UTxO values:"
+            mapM_ print $ Map.toList umap
         let valueSetList = getPolicySet . getTxOutValue <$> Map.elems umap
             combinedPolicySet = Set.unions valueSetList
         let foundPolicies = Map.restrictKeys confPolicySet combinedPolicySet
         pure $ not $ Map.null foundPolicies
+
+-- scriptsInTransaction
+
+-- Pairs the current set of transactions with the previous chainpoint
+delayedScan ::
+    Scanl.Scanl
+        IO
+        (ChainPoint, [Transaction])
+        (ChainPoint, [Transaction])
+delayedScan =
+    (\(prev, _, trs) -> (prev, trs))
+        <$> Scanl.mkScanl
+            (\(_, prev, _) (new, tr) -> (prev, new, tr))
+            (undefined, undefined, [])
+
+getPolicySet' :: Transaction -> Set.Set C.PolicyId
+getPolicySet' (Transaction _ tx) =
+    getPolicySet (getMintedValue tx)
+
+isByron :: ChainSyncEvent -> Bool
+isByron (RollForward (C.BlockInMode C.ByronEra _) _) = True
+isByron _ = False
 
 main :: IO ()
 main = do
@@ -65,11 +93,26 @@ main = do
     -- TODO: Use a logging interface instead of using putStrLn.
     putStrLn "Started..."
 
-    let confPolicySet = Map.fromList [(CM.script_hash x, x) | x <- scripts]
+    let confPolicyMap = Map.fromList [(CM.script_hash x, x) | x <- scripts]
         conn = mkLocalNodeConnectInfo networkId socketPath
     streamChainSyncEvents conn points -- Stream m ChainSyncEvent
     -- TODO: Try to replace "concatMap" with "unfoldEach".
+        & Stream.filter (not . isByron)
+        & fmap getEventTransactions
+        & Stream.postscanl delayedScan
         & Stream.concatMap
-            (Stream.fromList . (\(a, b) -> (a,) <$> b) . getEventTransactions)
-        & Stream.filterM (uncurry (shouldTrackTransaction conn confPolicySet))
-        & Stream.fold (Fold.drainMapM print)
+            (Stream.fromList . (\(a, b) -> (a,) <$> b))
+        & Stream.trace
+            ( \(_, tx) ->
+                let pols = getPolicySet' tx
+                 in unless (Set.null pols) (print pols)
+            )
+        & Stream.filterM (uncurry (shouldTrackTransaction conn confPolicyMap))
+        & Stream.fold (Fold.drainMapM (printIfKnown confPolicyMap))
+
+-- & Stream.fold (Fold.drainMapM (const (pure ())))
+
+printIfKnown :: Map.Map C.PolicyId CM.ScriptDetails -> (ChainPoint, Transaction) -> IO ()
+printIfKnown policies (_, tr) = mapM_ print res
+  where
+    res = Map.restrictKeys policies (getPolicySet' tr)

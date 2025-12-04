@@ -5,6 +5,8 @@ module PSR.ConfigMap where
 import Cardano.Api as C
 import GHC.Generics (Generic, Generically (..))
 
+-- Q: Is DeriveGeneric language extension same as Generically?
+
 data ConfigMap = ConfigMap
     { start :: Maybe C.ChainPoint
     , scripts :: [ScriptDetails]

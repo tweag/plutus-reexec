@@ -7,6 +7,12 @@ import Options.Applicative
 -- Options
 --------------------------------------------------------------------------------
 
+-- Q: I wonder if we can push everything into the ConfigMap and just take the
+-- yaml file path as the only optional CLI option.
+-- 1. It's very likely the socketPath and networkId don't ever change.
+-- 2. Since yaml already allows composition via other yaml files, common config
+--    can be shared.
+
 data Options = Options
     { socketPath :: SocketPath
     , networkId :: NetworkId

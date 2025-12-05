@@ -5,6 +5,7 @@
 import Cardano.Api qualified as C
 import Data.Function ((&))
 import Data.Map qualified as Map
+import Data.Set qualified as Set
 import Data.Yaml (decodeFileThrow)
 import Options
 import Options.Applicative
@@ -43,11 +44,10 @@ main = do
         & Stream.postscanl trackPreviousChainPoint
         -- TODO: Try to replace "concatMap" with "unfoldEach".
         & Stream.concatMap (Stream.fromList . (\(a, b) -> (a,) <$> b))
-        & fmap (uncurry mkContext0)
-        -- NOTE: To debug the filter function use filterM along with logging.
+        & Stream.mapM (mkContext1 conn . uncurry mkContext0)
         & Stream.filter
-            (not . Map.null . Map.restrictKeys confPolicyMap . getMintPolicies)
-        & Stream.mapM (mkContext1 conn)
-        & Stream.filter
-            (not . Map.null . Map.restrictKeys confPolicyMap . getSpendPolicies)
+            ( \ctx1@Context1{..} ->
+                not . Map.null . Map.restrictKeys confPolicyMap $
+                    Set.union (getMintPolicies context0) (getSpendPolicies ctx1)
+            )
         & Stream.fold (Fold.drainMapM print)

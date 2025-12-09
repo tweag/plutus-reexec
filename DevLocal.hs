@@ -45,8 +45,10 @@ echoing act cmdStr = do
     putStrLn cmdStr
     act cmdStr
 
+-- NOTE: This may potentially change the command. We remove the space for
+-- prettification.
 oneLine :: String -> String
-oneLine = unwords . lines
+oneLine = unwords . map (dropWhile (== ' ')) . filter (not . null) . lines
 
 firstLine :: String -> String
 firstLine = takeWhile (not . (== '\n'))

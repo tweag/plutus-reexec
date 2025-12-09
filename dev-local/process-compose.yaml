@@ -1,0 +1,19 @@
+version: "0.5"
+
+processes:
+  cardano-testnet:
+    command: "dev-local/start-local-cardano-node"
+    readiness_probe:
+      exec:
+        command: "[ -S ./devnet-env/socket/node1/sock ]"
+      initial_delay_seconds: 1
+      period_seconds: 1
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 60
+
+  populate:
+    command: "cabal run dev-local"
+    depends_on:
+      cardano-testnet:
+        condition: process_healthy

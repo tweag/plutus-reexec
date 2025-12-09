@@ -81,6 +81,18 @@ executable exec
     , streamly-core
     , yaml
 
+-- TODO: Move this into a seperate package
+executable dev-local
+  import:         lang
+  main-is:        Main.hs
+  hs-source-dirs: dev-local
+  build-depends:
+    , base
+    , directory
+    , filepath
+    , streamly-core
+    , streamly-process
+
 benchmark bench
   import:         lang
   type:           exitcode-stdio-1.0

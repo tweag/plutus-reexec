@@ -12,22 +12,27 @@ module Main (
 -- Imports
 -------------------------------------------------------------------------------
 
-import Control.Monad (void)
 import Streamly.System.Command qualified as Cmd
 import Streamly.Unicode.String (str)
+import System.Environment (getArgs)
 import System.FilePath ((<.>), (</>))
 
 -------------------------------------------------------------------------------
 -- Types & Utils
 -------------------------------------------------------------------------------
 
--- Minimal environment (set these globals when constructing Env)
-data Env = Env
-    { cliPath :: String -- e.g. "cardano-cli"
-    , workDir :: FilePath -- e.g. "work"
-    , networkArg :: String -- e.g. "--testnet-magic 42"
-    , faucetUtxo :: String -- e.g. "txhash#0"
-    , faucetSkey :: FilePath
+data CommonEnv = CommonEnv
+    { cCardanoCli :: String
+    , cCardanoNode :: FilePath
+    , cCardanoTestnet :: String
+    , cNetworkArg :: String
+    }
+
+data PopulateEnv = PopulateEnv
+    { pCommon :: CommonEnv
+    , pWorkDir :: FilePath -- "work"
+    , pFaucetUtxo :: String -- "txhash#0"
+    , pFaucetSkey :: FilePath
     }
 
 echoing :: (String -> IO a) -> String -> IO a
@@ -53,85 +58,79 @@ printStep s = putStrLn . unlines $ [divider, s, divider]
 -- Helpers
 -------------------------------------------------------------------------------
 
-createWallet :: Env -> String -> IO ()
-createWallet Env{..} name = do
+createWallet :: PopulateEnv -> String -> IO ()
+createWallet PopulateEnv{..} name = do
+    let CommonEnv{..} = pCommon
     printStep "createWallet"
-    cmd_ [str|mkdir -p #{workDir}|]
-    let vkey = workDir </> name <.> "vkey"
-        skey = workDir </> name <.> "skey"
-        addr = workDir </> name <.> "addr"
+    cmd_ [str|mkdir -p #{pWorkDir}|]
+    let vkey = pWorkDir </> name <.> "vkey"
+        skey = pWorkDir </> name <.> "skey"
+        addr = pWorkDir </> name <.> "addr"
     cmd_
         [str|
-    #{cliPath} address key-gen
+    #{cCardanoCli} address key-gen
              --verification-key-file #{vkey}
              --signing-key-file #{skey}
         |]
 
     cmd_
         [str|
-    #{cliPath} address build
-             --payment-verification-key-file #{vkey} #{networkArg}
+    #{cCardanoCli} address build
+             --payment-verification-key-file #{vkey} #{cNetworkArg}
              --out-file #{addr}
         |]
 
     putStrLn $ "[createWallet] wrote: " ++ vkey ++ " , " ++ skey ++ " , " ++ addr
 
-fundWallet :: Env -> String -> Integer -> IO ()
-fundWallet Env{..} destAddr lovelace = do
+fundWallet :: PopulateEnv -> String -> Integer -> IO ()
+fundWallet PopulateEnv{..} destAddr lovelace = do
+    let CommonEnv{..} = pCommon
     printStep "fundWallet"
-    let raw = workDir </> "fund.raw"
-        signed = workDir </> "fund.signed"
+    let raw = pWorkDir </> "fund.raw"
+        signed = pWorkDir </> "fund.signed"
         lovelaceStr = show lovelace
     cmd_
         [str|
-    #{cliPath} transaction build
+    #{cCardanoCli} transaction build
              --babbage-era
-             --tx-in #{faucetUtxo}
+             --tx-in #{pFaucetUtxo}
              --tx-out #{destAddr}+#{lovelaceStr}
              --change-address #{destAddr}
-             #{networkArg}
+             #{cNetworkArg}
              --out-file #{raw}
         |]
     cmd_
         [str|
-    #{cliPath} transaction sign
+    #{cCardanoCli} transaction sign
              --tx-body-file #{raw}
-             --signing-key-file #{faucetSkey}
-             #{networkArg}
+             --signing-key-file #{pFaucetSkey}
+             #{cNetworkArg}
              --out-file #{signed}
         |]
     cmd_
         [str|
-    #{cliPath} transaction submit
+    #{cCardanoCli} transaction submit
              --tx-file #{signed}
-             #{networkArg}
+             #{cNetworkArg}
         |]
 
-writeProtocolParams :: Env -> IO FilePath
-writeProtocolParams Env{..} = do
+writeProtocolParams :: PopulateEnv -> IO FilePath
+writeProtocolParams PopulateEnv{..} = do
+    let CommonEnv{..} = pCommon
     printStep "writeProtocolParams"
-    let out = workDir </> "protocol.json"
+    let out = pWorkDir </> "protocol.json"
     cmd_
         [str|
-    #{cliPath} query protocol-parameters #{networkArg} --out-file #{out}
+    #{cCardanoCli} query protocol-parameters #{cNetworkArg} --out-file #{out}
         |]
     pure out
 
 --------------------------------------------------------------------------------
--- Main
+-- Populate
 --------------------------------------------------------------------------------
 
-main :: IO ()
-main = do
-    let env =
-            Env
-                { cliPath = "cardano-cli"
-                , workDir = "work"
-                , networkArg = "--testnet-magic 42"
-                , faucetUtxo = "REPLACE_TXHASH#0"
-                , faucetSkey = "faucet.skey"
-                }
-
+populate :: PopulateEnv -> IO ()
+populate env = do
     -- create wallets
     createWallet env "alice"
     createWallet env "bob"
@@ -141,6 +140,68 @@ main = do
     fundWallet env aliceAddr 5000000
 
     -- protocol params for minting
-    void $ writeProtocolParams env
+    protoParams <- writeProtocolParams env
 
-    pure ()
+    putStrLn protoParams
+
+--------------------------------------------------------------------------------
+-- DevnetEnv
+--------------------------------------------------------------------------------
+
+data DevnetEnv = DevnetEnv
+    { dCommon :: CommonEnv
+    , dNumPoolNodes :: Int -- 1
+    , dOutputDir :: FilePath -- "./devnet-env"
+    }
+
+runDevnet :: DevnetEnv -> IO ()
+runDevnet DevnetEnv{..} = do
+    let CommonEnv{..} = dCommon
+    cmd_ [str|mkdir -p #{dOutputDir}|]
+    let dNumPoolNodesStr = show dNumPoolNodes
+    cmd_
+        [str|
+    CARDANO_CLI=#{cCardanoCli}
+    CARDANO_NODE=#{cCardanoNode}
+    #{cCardanoTestnet} cardano
+              --num-pool-nodes #{dNumPoolNodesStr}
+              --conway-era
+              --enable-new-epoch-state-logging
+              --output-dir #{dOutputDir}
+              #{cNetworkArg}
+        |]
+
+--------------------------------------------------------------------------------
+-- Main
+--------------------------------------------------------------------------------
+
+main :: IO ()
+main = do
+    args <- getArgs
+    case args of
+        ["start-local-net"] -> runDevnet devnetEnv
+        ["populate-local-net"] -> populate populateEnv
+        _ -> putStrLn "Unknown behavior."
+  where
+    commonEnv =
+        CommonEnv
+            { cCardanoCli = "cardano-cli"
+            , cCardanoNode = "cardano-node"
+            , cCardanoTestnet = "cardano-testnet"
+            , cNetworkArg = "--testnet-magic 42"
+            }
+
+    devnetEnv =
+        DevnetEnv
+            { dCommon = commonEnv
+            , dNumPoolNodes = 1
+            , dOutputDir = "./devnet-env"
+            }
+
+    populateEnv =
+        PopulateEnv
+            { pCommon = commonEnv
+            , pWorkDir = "work"
+            , pFaucetUtxo = "REPLACE_TXHASH#0"
+            , pFaucetSkey = "faucet.skey"
+            }

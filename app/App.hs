@@ -30,6 +30,9 @@ compactPrintOpts =
         , outputOptionsStringStyle = Literal
         }
 
+pCompact :: (Show a) => a -> IO ()
+pCompact = pPrintOpt CheckColorTty compactPrintOpts
+
 main :: IO ()
 main = do
     Options{..} <- execParser psrOpts
@@ -56,9 +59,9 @@ main = do
           & Stream.tap
               ( Fold.drainMapM
                   ( \(Context2 ctx scripts) -> do
-                      pPrintOpt CheckColorTty compactPrintOpts ctx
+                      pCompact ctx
                       putStrLn "Found scripts:"
-                      mapM_ pPrint scripts
+                      mapM_ pCompact scripts
                   )
               )
           & Stream.mapMaybeM (mkContext3 config)

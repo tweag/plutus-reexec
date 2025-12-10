@@ -21,6 +21,8 @@ KUBER_API="http://localhost:8081/api/v1"
 # Globals
 # ------------------------------------------------------------------------------
 
+WORK_DIR="work"
+
 TOKEN_NAME="TEST_TOKEN"
 TOKEN_NAME_HEX="544553545f544f4b454e"
 VALIDATOR_HASH="f14241393964259a53ca546af364e7f5688ca5aaa35f1e0da0f951b2"
@@ -82,25 +84,25 @@ submit_tx () {
         | sed "s/TOKEN_NAME_HEX/$TOKEN_NAME_HEX/g" \
         | sed "s/TOKEN_NAME/$TOKEN_NAME/g" \
         | sed "s/VALIDATOR_HASH/$VALIDATOR_HASH/g" \
-        > request.json
+        > "$WORK_DIR/request.json"
 
     echo "Create balanced transaction"
     curl -sfS -X POST -H "Content-Type: application/json" \
          --data @request.json \
-         $KUBER_API/tx?submit=false > tx.unsigned
+         $KUBER_API/tx?submit=false > "$WORK_DIR/tx.unsigned"
 
     echo "Signing..."
     cardano-cli latest transaction sign \
-        --tx-body-file tx.unsigned \
+        --tx-body-file "$WORK_DIR/tx.unsigned" \
         --signing-key-file $WALLET_KEY \
-        --out-file tx.signed
+        --out-file "$WORK_DIR/tx.signed"
 
     # 5. Submit
     echo "Submitting..."
     cardano-cli latest transaction submit \
         --testnet-magic $CARDANO_TESTNET_MAGIC \
         --socket-path $CARDANO_SOCKET \
-        --tx-file tx.signed
+        --tx-file "$WORK_DIR/tx.signed"
 
     echo "Transaction Submitted Successfully!"
 }
@@ -110,6 +112,8 @@ submit_tx () {
 # ------------------------------------------------------------------------------
 
 main () {
+    mkdir -p "$WORK_DIR"
+
     print_env
 
     step "Mint"

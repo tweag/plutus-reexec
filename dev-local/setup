@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -euo pipefail
+
+podman build -f dev-local/KuberContainerfile -t kuber-bridged .

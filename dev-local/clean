@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# NOTE: Run with caution
+
+rm -rf work
+rm -rf devnet-env

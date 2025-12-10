@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -euo pipefail
+
+socat TCP-LISTEN:3333,fork,bind=0.0.0.0 UNIX-CONNECT:./devnet-env/socket/node1/sock

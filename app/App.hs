@@ -49,6 +49,7 @@ main = do
           & fmap getEventTransactions
           & Stream.postscanl trackPreviousChainPoint
           -- TODO: Try to replace "concatMap" with "unfoldEach".
+          -- TODO: CostModels should probably be requested here instead of per transaction
           & Stream.concatMap (Stream.fromList . (\(a, b) -> (a,) <$> b))
           & Stream.mapM (mkContext1 cmLocalNodeConn . uncurry mkContext0)
           & Stream.mapMaybe (mkContext2 config)
@@ -60,4 +61,5 @@ main = do
                       mapM_ pPrint scripts
                   )
               )
+          & Stream.mapMaybeM (mkContext3 config)
           & Stream.fold Fold.drain

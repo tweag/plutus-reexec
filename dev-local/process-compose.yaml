@@ -19,13 +19,7 @@ processes:
         condition: process_healthy
 
   kuber:
-    command: |
-      podman run -it --rm \
-        --name kuber \
-        -p 8081:8081 \
-        -e NETWORK=42 \
-        -e CARDANO_NODE_SOCKET_PATH=/ipc/node.socket \
-        kuber-bridged
+    command: "dev-local/run-kuber"
     depends_on:
       stream-socket:
         condition: process_started

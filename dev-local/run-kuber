@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -euo pipefail
+
+podman run -it --rm \
+    --name kuber \
+    -p 8081:8081 \
+    -e NETWORK=42 \
+    -e CARDANO_NODE_SOCKET_PATH=/ipc/node.socket \
+    kuber-bridged

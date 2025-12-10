@@ -1,0 +1,124 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# ------------------------------------------------------------------------------
+# Network
+# ------------------------------------------------------------------------------
+
+CARDANO_SOCKET="./devnet-env/socket/node1/sock"
+CARDANO_TESTNET_MAGIC="42"
+
+# ------------------------------------------------------------------------------
+# Endpoints
+# ------------------------------------------------------------------------------
+
+QUERY_API="http://localhost:8081/api/v3"
+CARDANO_API="http://localhost:8081/api/v3"
+KUBER_API="http://localhost:8081/api/v1"
+
+# ------------------------------------------------------------------------------
+# Globals
+# ------------------------------------------------------------------------------
+
+TOKEN_NAME="TEST_TOKEN"
+TOKEN_NAME_HEX="544553545f544f4b454e"
+VALIDATOR_HASH="f14241393964259a53ca546af364e7f5688ca5aaa35f1e0da0f951b2"
+
+# NOTE: Ensure these files exist!
+WALLET_KEY="devnet-env/utxo-keys/utxo3/utxo.skey"
+WALLET_ADDR_FILE="devnet-env/utxo-keys/utxo3/utxo.addr"
+
+# ------------------------------------------------------------------------------
+# Derived
+# ------------------------------------------------------------------------------
+
+WALLET_ADDR=$(cat $WALLET_ADDR_FILE)
+
+# ------------------------------------------------------------------------------
+# Utils
+# ------------------------------------------------------------------------------
+
+step () {
+    local STEP=$1
+    echo ""
+    echo "------------------------------------------------"
+    echo "$STEP"
+    echo "------------------------------------------------"
+    echo ""
+}
+
+print_var () {
+    local VAR=$1
+    eval "echo \"$VAR: \$$VAR\""
+}
+
+# ------------------------------------------------------------------------------
+# Functions
+# ------------------------------------------------------------------------------
+
+print_env () {
+    step "Environment"
+    print_var "CARDANO_SOCKET"
+    print_var "CARDANO_TESTNET_MAGIC"
+    print_var "QUERY_API"
+    print_var "CARDANO_API"
+    print_var "KUBER_API"
+    print_var "TOKEN_NAME"
+    print_var "TOKEN_NAME_HEX"
+    print_var "VALIDATOR_HASH"
+    print_var "WALLET_KEY"
+    print_var "WALLET_ADDR_FILE"
+    print_var "WALLET_ADDR"
+}
+
+submit_tx () {
+    local TEMPLATE=$1
+
+    echo "Create request.json"
+    # 1. Inject real Wallet Address into the JSON template
+    cat $TEMPLATE \
+        | sed "s/WALLET_ADDR/$WALLET_ADDR/g" \
+        | sed "s/TOKEN_NAME_HEX/$TOKEN_NAME_HEX/g" \
+        | sed "s/TOKEN_NAME/$TOKEN_NAME/g" \
+        | sed "s/VALIDATOR_HASH/$VALIDATOR_HASH/g" \
+        > request.json
+
+    echo "Create balanced transaction"
+    curl -sfS -X POST -H "Content-Type: application/json" \
+         --data @request.json \
+         $KUBER_API/tx?submit=false > tx.unsigned
+
+    echo "Signing..."
+    cardano-cli latest transaction sign \
+        --tx-body-file tx.unsigned \
+        --signing-key-file $WALLET_KEY \
+        --out-file tx.signed
+
+    # 5. Submit
+    echo "Submitting..."
+    cardano-cli latest transaction submit \
+        --testnet-magic $CARDANO_TESTNET_MAGIC \
+        --socket-path $CARDANO_SOCKET \
+        --tx-file tx.signed
+
+    echo "Transaction Submitted Successfully!"
+}
+
+# ------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------
+
+main () {
+    print_env
+
+    step "Mint"
+    submit_tx "dev-local/tx_mint.json"
+
+    echo "Waiting 5 seconds for block confirmation..."
+    sleep 5
+
+    echo "Workflow Complete!"
+}
+
+main

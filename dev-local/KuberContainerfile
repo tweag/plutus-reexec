@@ -1,0 +1,12 @@
+FROM dquadrant/kuber:latest
+USER root
+# Install socat inside the container
+RUN apt-get update && apt-get install -y socat
+
+RUN mkdir -p /ipc
+
+# Start script:
+# 1. Connects to Mac Host (host.containers.internal) on port 3333
+# 2. Creates fake socket file at /ipc/node.socket
+# 3. Starts Kuber
+ENTRYPOINT ["/bin/bash", "-c", "socat UNIX-LISTEN:/ipc/node.socket,fork TCP:host.containers.internal:3333 & kuber-server"]

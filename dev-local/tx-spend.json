@@ -1,0 +1,24 @@
+{
+    "selections": ["WALLET_ADDR"],
+    "inputs": [
+        {
+            "utxo": {
+                "hash": "TX_ID",
+                "index": 0
+            },
+            "script": VALIDATOR,
+            "redeemer": {  "int": 3 }
+        }
+    ],
+    "outputs": [
+        {
+            "script": VALIDATOR,
+            "value": {
+                "POLICY_HASH": {
+                    "TOKEN_NAME_HEX": 100
+                }
+            },
+            "datum":  {  "int": 10 }
+        }
+    ]
+}

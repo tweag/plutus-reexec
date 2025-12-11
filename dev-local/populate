@@ -102,6 +102,7 @@ submit_tx () {
         | sed "s/POLICY_HASH/$POLICY_HASH/g" \
         | awk -v rep="$POLICY" '{ gsub(/POLICY/, rep); print }' \
         | awk -v rep="$VALIDATOR" '{ gsub(/VALIDATOR/, rep); print }' \
+        | sed "s/TX_ID/$TX_ID/g" \
         > "$WORK_DIR/request.json"
 
     run cat "$WORK_DIR/request.json"
@@ -146,6 +147,9 @@ main () {
 
     echo "Waiting 5 seconds for block confirmation..."
     sleep 5
+
+    step "Spend"
+    submit_tx "dev-local/tx-spend.json"
 
     echo "Workflow Complete!"
 }

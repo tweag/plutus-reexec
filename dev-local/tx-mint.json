@@ -11,10 +11,7 @@
     ],
     "outputs": [
         {
-            "script": {
-                "type": "PlutusScriptV2",
-                "cborHex": "49480100002221200101"
-            },
+            "script": VALIDATOR,
             "value": {
                 "POLICY_HASH": {
                     "TOKEN_NAME_HEX": 100

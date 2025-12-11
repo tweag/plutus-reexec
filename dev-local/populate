@@ -26,6 +26,7 @@ CONFIG_DIR="dev-local"
 
 TOKEN_NAME="TEST_TOKEN"
 POLICY=$(cat "$CONFIG_DIR/policy.plutus")
+VALIDATOR=$(cat "$CONFIG_DIR/validator.plutus")
 TOKEN_NAME_HEX=$(printf "%s" "$TOKEN_NAME" | xxd -p | tr -d '\n')
 POLICY_HASH=$(cardano-cli latest transaction policyid --script-file "$CONFIG_DIR/policy.plutus")
 
@@ -83,6 +84,7 @@ print_env () {
     print_var "TOKEN_NAME_HEX"
     print_var "POLICY"
     print_var "POLICY_HASH"
+    print_var "VALIDATOR"
     print_var "WALLET_KEY"
     print_var "WALLET_ADDR_FILE"
     print_var "WALLET_ADDR"
@@ -99,6 +101,7 @@ submit_tx () {
         | sed "s/TOKEN_NAME/$TOKEN_NAME/g" \
         | sed "s/POLICY_HASH/$POLICY_HASH/g" \
         | awk -v rep="$POLICY" '{ gsub(/POLICY/, rep); print }' \
+        | awk -v rep="$VALIDATOR" '{ gsub(/VALIDATOR/, rep); print }' \
         > "$WORK_DIR/request.json"
 
     run cat "$WORK_DIR/request.json"

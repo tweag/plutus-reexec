@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -euo pipefail
+
+process-compose -f ./dev-local/process-compose.yaml -p 3030 && ./dev-local/clean

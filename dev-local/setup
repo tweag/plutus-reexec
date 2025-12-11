@@ -2,4 +2,15 @@
 
 set -euo pipefail
 
+ensure () {
+  if ! command -v "$1" >/dev/null 2>&1; then
+      echo "Error: '$1' is not installed or not in PATH" >&2
+      exit 1
+  fi
+}
+
+ensure podman
+ensure jq
+ensure process-compose
+
 podman build -f dev-local/KuberContainerfile -t kuber-bridged .

@@ -22,10 +22,12 @@ KUBER_API="http://localhost:8081/api/v1"
 # ------------------------------------------------------------------------------
 
 WORK_DIR="work"
+CONFIG_DIR="dev-local"
 
 TOKEN_NAME="TEST_TOKEN"
-TOKEN_NAME_HEX="544553545f544f4b454e"
-VALIDATOR_HASH="f14241393964259a53ca546af364e7f5688ca5aaa35f1e0da0f951b2"
+POLICY=$(cat "$CONFIG_DIR/policy.plutus")
+TOKEN_NAME_HEX=$(printf "%s" "$TOKEN_NAME" | xxd -p | tr -d '\n')
+POLICY_HASH=$(cardano-cli latest transaction policyid --script-file "$CONFIG_DIR/policy.plutus")
 
 # NOTE: Ensure these files exist!
 WALLET_KEY="devnet-env/utxo-keys/utxo3/utxo.skey"
@@ -36,6 +38,12 @@ WALLET_ADDR_FILE="devnet-env/utxo-keys/utxo3/utxo.addr"
 # ------------------------------------------------------------------------------
 
 WALLET_ADDR=$(cat $WALLET_ADDR_FILE)
+
+# ------------------------------------------------------------------------------
+# Function return registers
+# ------------------------------------------------------------------------------
+
+TX_ID=""
 
 # ------------------------------------------------------------------------------
 # Utils
@@ -55,6 +63,11 @@ print_var () {
     eval "echo \"$VAR: \$$VAR\""
 }
 
+run () {
+  echo "$*"
+  "$@"
+}
+
 # ------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------
@@ -68,7 +81,8 @@ print_env () {
     print_var "KUBER_API"
     print_var "TOKEN_NAME"
     print_var "TOKEN_NAME_HEX"
-    print_var "VALIDATOR_HASH"
+    print_var "POLICY"
+    print_var "POLICY_HASH"
     print_var "WALLET_KEY"
     print_var "WALLET_ADDR_FILE"
     print_var "WALLET_ADDR"
@@ -83,8 +97,11 @@ submit_tx () {
         | sed "s/WALLET_ADDR/$WALLET_ADDR/g" \
         | sed "s/TOKEN_NAME_HEX/$TOKEN_NAME_HEX/g" \
         | sed "s/TOKEN_NAME/$TOKEN_NAME/g" \
-        | sed "s/VALIDATOR_HASH/$VALIDATOR_HASH/g" \
+        | sed "s/POLICY_HASH/$POLICY_HASH/g" \
+        | awk -v rep="$POLICY" '{ gsub(/POLICY/, rep); print }' \
         > "$WORK_DIR/request.json"
+
+    run cat "$WORK_DIR/request.json"
 
     echo "Create balanced transaction"
     curl -sfS -X POST -H "Content-Type: application/json" \
@@ -103,6 +120,11 @@ submit_tx () {
         --testnet-magic $CARDANO_TESTNET_MAGIC \
         --socket-path $CARDANO_SOCKET \
         --tx-file "$WORK_DIR/tx.signed"
+
+    TX_ID=$(cardano-cli latest transaction txid --tx-file "$WORK_DIR/tx.signed" \
+                |  jq -r ".txhash")
+
+    print_var "TX_ID"
 
     echo "Transaction Submitted Successfully!"
 }

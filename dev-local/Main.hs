@@ -2,7 +2,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Main (main) where
+module Main (main, flg) where
 
 -------------------------------------------------------------------------------
 -- Imports
@@ -81,9 +81,6 @@ env_VALIDATOR_FILE = "dev-local/validator.plutus"
 env_WORK_DIR :: FilePath
 env_WORK_DIR = "work"
 
-_env_PROTO_PARAMS_FILE :: String
-_env_PROTO_PARAMS_FILE = env_WORK_DIR </> "protocol.json"
-
 env_TX_UNSIGNED :: String
 env_TX_UNSIGNED = env_WORK_DIR </> "tx.unsigned"
 
@@ -134,16 +131,6 @@ getAddress scriptFile =
         ]
         & firstNonEmptyLine "getAddress"
 
-_saveProtoParams :: FilePath -> IO ()
-_saveProtoParams outFile =
-    runCmd
-        "cardano-cli conway query protocol-parameters"
-        [ optNetwork
-        , optSocketPath
-        , opt "out-file" outFile
-        ]
-        & drain
-
 buildTransaction :: [CmdOption] -> IO ()
 buildTransaction args =
     runCmd
@@ -185,6 +172,18 @@ getFirstUtxoAt walletAddr =
         & Cmd.pipeChunks [str|jq -r "keys[0]"|]
         & firstNonEmptyLine "getFirstUtxoAt"
 
+nullUtxo :: String -> IO Bool
+nullUtxo utxo =
+    runCmd
+        "cardano-cli latest query utxo"
+        [ optNetwork
+        , optSocketPath
+        , opt "tx-in" utxo
+        ]
+        & Cmd.pipeChunks [str|jq 'type == "object" and length == 0'|]
+        & firstNonEmptyLine "nullUtxo"
+        & fmap (== "true")
+
 -------------------------------------------------------------------------------
 -- Output parsing
 -------------------------------------------------------------------------------
@@ -198,21 +197,25 @@ ensureBlankWorkDir = do
     Cmd.toStdout [str|rm -rf #{env_WORK_DIR}|]
     Cmd.toStdout [str|mkdir -p #{env_WORK_DIR}|]
 
-main :: IO ()
-main = do
-    printStep "Setup"
+waitTillExists :: String -> IO ()
+waitTillExists utxo =
+    Stream.repeatM (printStep "Waiting" >> threadDelay 3000000 >> nullUtxo utxo)
+        & Stream.takeWhile id
+        & Stream.fold Fold.drain
 
-    policyId <- getPolicyId env_POLICY_FILE
-    faucetAddr <- env_FAUCET_WALLET_ADDR
-    tokenNameHex <- env_TOKEN_NAME_HEX
-    faucetUtxo <- getFirstUtxoAt faucetAddr
-    validatorAddress <- getAddress env_VALIDATOR_FILE
-    let assetClass = [str|#{policyId}.#{tokenNameHex}|]
+fstOutput :: String -> String
+fstOutput txid = [str|#{txid}#0|]
 
-    printVar "faucetAddr" faucetAddr
-    printVar "validatorAddress" validatorAddress
+data Derived = Derived
+    { validatorAddress :: String
+    , assetClass :: String
+    , faucetAddr :: String
+    }
 
+runMint :: Derived -> IO String
+runMint Derived{..} = do
     ensureBlankWorkDir
+    faucetUtxo <- getFirstUtxoAt faucetAddr
     printStep "Mint"
     buildTransaction
         [ opt "tx-in" faucetUtxo
@@ -221,7 +224,7 @@ main = do
         , opt "tx-out-inline-datum-value" (10 :: Int)
         , opt "mint" [str|100 #{assetClass}|]
         , opt "mint-script-file" env_POLICY_FILE
-        , opt "mint-redeemer-value" [str|{"constructor": 0, "fields": []}|]
+        , opt "mint-redeemer-value" (5 :: Int)
         , opt "change-address" faucetAddr
         , opt "out-file" env_TX_UNSIGNED
         ]
@@ -236,21 +239,22 @@ main = do
 
     mintTx <- getTransactionId env_TX_SIGNED
     printVar "mintTx" mintTx
-    printStep "Waiting"
-    threadDelay 5000000
+    pure mintTx
 
-    faucetUtxo1 <- getFirstUtxoAt faucetAddr
-    printVar "faucetUtxo1" faucetUtxo1
-
+runSpend :: Derived -> String -> IO String
+runSpend Derived{..} lockedUtxo = do
     ensureBlankWorkDir
+
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    printVar "faucetUtxo" faucetUtxo
+
     printStep "Spend"
-    let lockedUtxo = [str|#{mintTx}#0|]
     buildTransaction
-        [ opt "tx-in" faucetUtxo1
+        [ opt "tx-in" faucetUtxo
         , opt "tx-in" lockedUtxo
         , opt "tx-in-script-file" env_VALIDATOR_FILE
         , opt "tx-in-redeemer-value" (10 :: Int)
-        , opt "tx-in-collateral" faucetUtxo1
+        , opt "tx-in-collateral" faucetUtxo
         , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
         , opt "tx-out-inline-datum-value" (20 :: Int)
         , opt "change-address" faucetAddr
@@ -264,3 +268,27 @@ main = do
     submitTransaction
         [ opt "tx-file" env_TX_SIGNED
         ]
+    spendTx <- getTransactionId env_TX_SIGNED
+    printVar "spendTx" spendTx
+    pure spendTx
+
+main :: IO ()
+main = do
+    printStep "Setup"
+
+    policyId <- getPolicyId env_POLICY_FILE
+    faucetAddr <- env_FAUCET_WALLET_ADDR
+    tokenNameHex <- env_TOKEN_NAME_HEX
+    validatorAddress <- getAddress env_VALIDATOR_FILE
+    let assetClass = [str|#{policyId}.#{tokenNameHex}|]
+
+    printVar "faucetAddr" faucetAddr
+    printVar "validatorAddress" validatorAddress
+
+    let derived = Derived validatorAddress assetClass faucetAddr
+
+    Stream.iterateM
+        (\u -> ((>>) (waitTillExists u)) $ fmap fstOutput $ runSpend derived u)
+        (fstOutput <$> runMint derived)
+        & Stream.take 15
+        & Stream.fold Fold.drain

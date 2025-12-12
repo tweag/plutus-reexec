@@ -57,10 +57,10 @@ env_CARDANO_TESTNET_MAGIC :: Int
 env_CARDANO_TESTNET_MAGIC = 42
 
 env_FAUCET_WALLET_SKEY_FILE :: FilePath
-env_FAUCET_WALLET_SKEY_FILE = "devnet-env/utxo-keys/utxo3/utxo.skey"
+env_FAUCET_WALLET_SKEY_FILE = "devnet-env/utxo-keys/utxo1/utxo.skey"
 
 env_FAUCET_WALLET_ADDR :: IO String
-env_FAUCET_WALLET_ADDR = readFile "devnet-env/utxo-keys/utxo3/utxo.addr"
+env_FAUCET_WALLET_ADDR = readFile "devnet-env/utxo-keys/utxo1/utxo.addr"
 
 env_TOKEN_NAME :: String
 env_TOKEN_NAME = "TEST_TOKEN"

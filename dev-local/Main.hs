@@ -219,7 +219,6 @@ main = do
         , opt "tx-in-collateral" faucetUtxo
         , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
         , opt "tx-out-inline-datum-value" (10 :: Int)
-        , opt "tx-out-reference-script-file" env_VALIDATOR_FILE
         , opt "mint" [str|100 #{assetClass}|]
         , opt "mint-script-file" env_POLICY_FILE
         , opt "mint-redeemer-value" [str|{"constructor": 0, "fields": []}|]
@@ -249,10 +248,9 @@ main = do
     buildTransaction
         [ opt "tx-in" faucetUtxo1
         , opt "tx-in" lockedUtxo
+        , opt "tx-in-script-file" env_VALIDATOR_FILE
+        , opt "tx-in-redeemer-value" (10 :: Int)
         , opt "tx-in-collateral" faucetUtxo1
-        , flg "spending-plutus-script-v2"
-        , opt "spending-tx-in-reference" lockedUtxo
-        , opt "spending-reference-tx-in-redeemer-value" (10 :: Int)
         , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
         , opt "tx-out-inline-datum-value" (20 :: Int)
         , opt "change-address" faucetAddr

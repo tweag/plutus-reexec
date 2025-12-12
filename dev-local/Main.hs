@@ -8,6 +8,7 @@ module Main (main) where
 -- Imports
 -------------------------------------------------------------------------------
 
+import Control.Concurrent (threadDelay)
 import Data.Function ((&))
 import Data.Word (Word8)
 import Streamly.Data.Array (Array)
@@ -41,6 +42,9 @@ firstNonEmptyLine :: String -> Stream IO (Array Word8) -> IO String
 firstNonEmptyLine tag =
     Stream.fold (maybe (error [str|Empty: #{tag}|]) id <$> Fold.one)
         . nonEmptyLines
+
+printVar :: String -> String -> IO ()
+printVar tag val = putStrLn [str|[#{tag}]: #{val}|]
 
 -------------------------------------------------------------------------------
 -- Globals
@@ -91,12 +95,15 @@ env_TX_SIGNED = env_WORK_DIR </> "tx.signed"
 -------------------------------------------------------------------------------
 
 type Command = String
-type CmdOption = (String, String)
+type CmdOption = (String, Maybe String)
 
 opt :: (Show b) => String -> b -> CmdOption
-opt a b = (a, quoted b)
+opt a b = (a, Just (quoted b))
   where
     quoted = show
+
+flg :: String -> CmdOption
+flg a = (a, Nothing)
 
 optNetwork :: CmdOption
 optNetwork = opt "testnet-magic" env_CARDANO_TESTNET_MAGIC
@@ -108,7 +115,7 @@ runCmd :: Command -> [CmdOption] -> Stream IO (Array Word8)
 runCmd cmd args =
     Stream.before (putStrLn [str|> #{cmdStr}|]) (Cmd.toChunks cmdStr)
   where
-    cmdList = cmd : concatMap (\(k, v) -> ["--" ++ k, v]) args
+    cmdList = cmd : concatMap (\(k, v) -> ["--" ++ k, maybe "" id v]) args
     cmdStr = unwords cmdList
 
 getPolicyId :: FilePath -> IO String
@@ -167,8 +174,8 @@ getTransactionId txSigned =
         & Cmd.pipeChunks [str|jq -r ".txhash"|]
         & firstNonEmptyLine "getTransactionId"
 
-queryUtxo :: String -> IO String
-queryUtxo walletAddr =
+getFirstUtxoAt :: String -> IO String
+getFirstUtxoAt walletAddr =
     runCmd
         "cardano-cli conway query utxo"
         [ optNetwork
@@ -176,7 +183,7 @@ queryUtxo walletAddr =
         , opt "address" walletAddr
         ]
         & Cmd.pipeChunks [str|jq -r "keys[0]"|]
-        & firstNonEmptyLine "queryUtxo"
+        & firstNonEmptyLine "getFirstUtxoAt"
 
 -------------------------------------------------------------------------------
 -- Output parsing
@@ -186,28 +193,33 @@ queryUtxo walletAddr =
 -- Main
 -------------------------------------------------------------------------------
 
-setup :: IO ()
-setup = do
+ensureBlankWorkDir :: IO ()
+ensureBlankWorkDir = do
+    Cmd.toStdout [str|rm -rf #{env_WORK_DIR}|]
     Cmd.toStdout [str|mkdir -p #{env_WORK_DIR}|]
 
 main :: IO ()
 main = do
     printStep "Setup"
-    setup
 
     policyId <- getPolicyId env_POLICY_FILE
     faucetAddr <- env_FAUCET_WALLET_ADDR
     tokenNameHex <- env_TOKEN_NAME_HEX
-    faucetUtxo <- queryUtxo faucetAddr
+    faucetUtxo <- getFirstUtxoAt faucetAddr
     validatorAddress <- getAddress env_VALIDATOR_FILE
     let assetClass = [str|#{policyId}.#{tokenNameHex}|]
 
+    printVar "faucetAddr" faucetAddr
+    printVar "validatorAddress" validatorAddress
+
+    ensureBlankWorkDir
     printStep "Mint"
     buildTransaction
         [ opt "tx-in" faucetUtxo
         , opt "tx-in-collateral" faucetUtxo
         , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
         , opt "tx-out-inline-datum-value" (10 :: Int)
+        , opt "tx-out-reference-script-file" env_VALIDATOR_FILE
         , opt "mint" [str|100 #{assetClass}|]
         , opt "mint-script-file" env_POLICY_FILE
         , opt "mint-redeemer-value" [str|{"constructor": 0, "fields": []}|]
@@ -222,4 +234,36 @@ main = do
     submitTransaction
         [ opt "tx-file" env_TX_SIGNED
         ]
-    getTransactionId env_TX_SIGNED >>= print
+
+    mintTx <- getTransactionId env_TX_SIGNED
+    printVar "mintTx" mintTx
+    printStep "Waiting"
+    threadDelay 5000000
+
+    faucetUtxo1 <- getFirstUtxoAt faucetAddr
+    printVar "faucetUtxo1" faucetUtxo1
+
+    ensureBlankWorkDir
+    printStep "Spend"
+    let lockedUtxo = [str|#{mintTx}#0|]
+    buildTransaction
+        [ opt "tx-in" faucetUtxo1
+        , opt "tx-in" lockedUtxo
+        , opt "tx-in-collateral" faucetUtxo1
+        , flg "spending-plutus-script-v2"
+        , opt "spending-tx-in-reference" lockedUtxo
+        , opt "spending-reference-tx-in-datum-value" (10 :: Int)
+        , opt "spending-reference-tx-in-redeemer-value" (10 :: Int)
+        , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
+        , opt "tx-out-inline-datum-value" (20 :: Int)
+        , opt "change-address" faucetAddr
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    signTransaction
+        [ opt "signing-key-file" env_FAUCET_WALLET_SKEY_FILE
+        , opt "tx-body-file" env_TX_UNSIGNED
+        , opt "out-file" env_TX_SIGNED
+        ]
+    submitTransaction
+        [ opt "tx-file" env_TX_SIGNED
+        ]

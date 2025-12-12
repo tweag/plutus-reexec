@@ -15,6 +15,7 @@ import PSR.Chain
 import PSR.ConfigMap qualified as CM
 import PSR.ContextBuilder
 import PSR.Streaming
+import PSR.Storage.SQLite
 import Streamly.Data.Fold.Prelude qualified as Fold
 import Streamly.Data.Stream.Prelude qualified as Stream
 import System.Exit (exitFailure)
@@ -38,21 +39,22 @@ main = do
     -- TODO: Use a logging interface instead of using putStrLn.
     putStrLn "Started..."
 
-    withAsync (HTTP.run httpServerPort) $ \serverAsync -> do
-      link serverAsync
+    withSqliteStorage sqlitePath $ \storage ->
+      withAsync (HTTP.run storage httpServerPort) $ \serverAsync -> do
+        link serverAsync
 
-      let confPolicyMap = Map.fromList [(CM.script_hash x, x) | x <- scripts]
-          conn = mkLocalNodeConnectInfo networkId socketPath
-      streamChainSyncEvents conn points
-          & Stream.filter (not . isByron)
-          & fmap getEventTransactions
-          & Stream.postscanl trackPreviousChainPoint
-          -- TODO: Try to replace "concatMap" with "unfoldEach".
-          & Stream.concatMap (Stream.fromList . (\(a, b) -> (a,) <$> b))
-          & Stream.mapM (mkContext1 conn . uncurry mkContext0)
-          & Stream.filter
-              ( \ctx1@Context1{..} ->
-                  not . Map.null . Map.restrictKeys confPolicyMap $
-                      Set.union (getMintPolicies context0) (getSpendPolicies ctx1)
-              )
-          & Stream.fold (Fold.drainMapM print)
+        let confPolicyMap = Map.fromList [(CM.script_hash x, x) | x <- scripts]
+            conn = mkLocalNodeConnectInfo networkId socketPath
+        streamChainSyncEvents conn points
+            & Stream.filter (not . isByron)
+            & fmap getEventTransactions
+            & Stream.postscanl trackPreviousChainPoint
+            -- TODO: Try to replace "concatMap" with "unfoldEach".
+            & Stream.concatMap (Stream.fromList . (\(a, b) -> (a,) <$> b))
+            & Stream.mapM (mkContext1 conn . uncurry mkContext0)
+            & Stream.filter
+                ( \ctx1@Context1{..} ->
+                    not . Map.null . Map.restrictKeys confPolicyMap $
+                        Set.union (getMintPolicies context0) (getSpendPolicies ctx1)
+                )
+            & Stream.fold (Fold.drainMapM print)

@@ -52,6 +52,8 @@ library
     PSR.Chain
     PSR.ConfigMap
     PSR.ContextBuilder
+    PSR.Storage.Interface
+    PSR.Storage.SQLite
     PSR.Streaming
     PSR.HTTP
     PSR.HTTP.API
@@ -60,6 +62,7 @@ library
   build-depends:
     , base                         >=4.9 && <5
     , aeson
+    , bytestring
     , cardano-api
     , cardano-ledger-alonzo
     , cardano-ledger-core
@@ -75,6 +78,7 @@ library
     , servant-queryparam-server
     , streamly
     , streamly-core
+    , sqlite-simple
     , prometheus-client
     , prometheus-metrics-ghc
     , text

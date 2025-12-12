@@ -1,5 +1,6 @@
 module PSR.HTTP.API
   ( ServerAPI 
+  , EventType(..)
   , FilterQueryParams(..)
   ) where
 
@@ -43,6 +44,7 @@ data FilterQueryParams = FilterQueryParams
   , _filterQueryParam_slot_end :: (Maybe Integer)
   , _filterQueryParam_limit :: (Maybe Integer) 
   , _filterQueryParam_offset :: (Maybe Integer)
+  , _filterQueryParam_name :: (Maybe Text)
 } deriving (Generic)
 
 type ServerAPI

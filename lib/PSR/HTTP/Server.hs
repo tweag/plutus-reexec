@@ -1,9 +1,11 @@
-module PSR.HTTP.Server (
-  run
+module PSR.HTTP.Server
+  ( run
   ) where
 
 import PSR.HTTP.API
+import PSR.Storage.Interface (Storage(..))
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Default (def)
 import Servant
 import Servant.Server.Generic ()
@@ -16,16 +18,20 @@ import Prometheus.Metric.GHC (ghcMetrics)
 serverApi :: Proxy ServerAPI
 serverApi = Proxy
 
-server :: Server ServerAPI 
-server = eventsH
+server :: Storage -> Server ServerAPI 
+server Storage{..} = eventsH
   where
     eventsH params = (eventsHandler params Nothing) :<|> (eventsHandler params . Just) 
 
-    eventsHandler FilterQueryParams{} _mName = do
+    eventsHandler filterParams' mName = do
+      -- The capture parameter `name` has a higher priority over the query param
+      let nameFilterParameter = maybe (_filterQueryParam_name filterParams') Just mName
+      let filterParams = filterParams' { _filterQueryParam_name = nameFilterParameter }
+      _events <- liftIO $ getEvents filterParams
       pure []
 
-run :: Warp.Port -> IO ()
-run port = do
+run :: Storage -> Warp.Port -> IO ()
+run storage port = do
   _ <- register ghcMetrics
 
-  Warp.run port (prometheus def $ serve serverApi server) 
+  Warp.run port (prometheus def $ serve serverApi (server storage))

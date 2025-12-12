@@ -252,7 +252,6 @@ main = do
         , opt "tx-in-collateral" faucetUtxo1
         , flg "spending-plutus-script-v2"
         , opt "spending-tx-in-reference" lockedUtxo
-        , opt "spending-reference-tx-in-datum-value" (10 :: Int)
         , opt "spending-reference-tx-in-redeemer-value" (10 :: Int)
         , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
         , opt "tx-out-inline-datum-value" (20 :: Int)

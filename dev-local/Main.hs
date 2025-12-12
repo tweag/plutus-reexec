@@ -46,6 +46,27 @@ firstNonEmptyLine tag =
 printVar :: String -> String -> IO ()
 printVar tag val = putStrLn [str|[#{tag}]: #{val}|]
 
+ensureBlankWorkDir :: IO ()
+ensureBlankWorkDir = do
+    Cmd.toStdout [str|rm -rf #{env_WORK_DIR}|]
+    Cmd.toStdout [str|mkdir -p #{env_WORK_DIR}|]
+
+waitTillExists :: String -> IO ()
+waitTillExists utxo =
+    Stream.repeatM (printStep "Waiting" >> threadDelay 3000000 >> nullUtxo utxo)
+        & Stream.takeWhile id
+        & Stream.fold Fold.drain
+
+fstOutput :: String -> String
+fstOutput txid = [str|#{txid}#0|]
+
+hexify :: String -> IO String
+hexify val =
+    Cmd.toChars [str|printf "%s" "#{val}"|]
+        & Cmd.pipeChars "xxd -p"
+        & Stream.takeWhile (/= '\n')
+        & Stream.fold Fold.toList
+
 -------------------------------------------------------------------------------
 -- Globals
 -------------------------------------------------------------------------------
@@ -61,22 +82,6 @@ env_FAUCET_WALLET_SKEY_FILE = "devnet-env/utxo-keys/utxo1/utxo.skey"
 
 env_FAUCET_WALLET_ADDR :: IO String
 env_FAUCET_WALLET_ADDR = readFile "devnet-env/utxo-keys/utxo1/utxo.addr"
-
-env_TOKEN_NAME :: String
-env_TOKEN_NAME = "TEST_TOKEN"
-
-env_TOKEN_NAME_HEX :: IO String
-env_TOKEN_NAME_HEX =
-    Cmd.toChars [str|printf "%s" "#{env_TOKEN_NAME}"|]
-        & Cmd.pipeChars "xxd -p"
-        & Stream.takeWhile (/= '\n')
-        & Stream.fold Fold.toList
-
-env_POLICY_FILE :: FilePath
-env_POLICY_FILE = "dev-local/policy.plutus"
-
-env_VALIDATOR_FILE :: FilePath
-env_VALIDATOR_FILE = "dev-local/validator.plutus"
 
 env_WORK_DIR :: FilePath
 env_WORK_DIR = "work"
@@ -185,49 +190,49 @@ nullUtxo utxo =
         & fmap (== "true")
 
 -------------------------------------------------------------------------------
--- Output parsing
--------------------------------------------------------------------------------
-
--------------------------------------------------------------------------------
 -- Main
 -------------------------------------------------------------------------------
 
-ensureBlankWorkDir :: IO ()
-ensureBlankWorkDir = do
-    Cmd.toStdout [str|rm -rf #{env_WORK_DIR}|]
-    Cmd.toStdout [str|mkdir -p #{env_WORK_DIR}|]
-
-waitTillExists :: String -> IO ()
-waitTillExists utxo =
-    Stream.repeatM (printStep "Waiting" >> threadDelay 3000000 >> nullUtxo utxo)
-        & Stream.takeWhile id
-        & Stream.fold Fold.drain
-
-fstOutput :: String -> String
-fstOutput txid = [str|#{txid}#0|]
-
-data Derived = Derived
+data AppEnv = AppEnv
     { validatorAddress :: String
     , assetClass :: String
     , faucetAddr :: String
+    , policyFilePath :: FilePath
+    , validatorFilePath :: FilePath
+    , numIterations :: Int
+    , assetAmount :: String
     }
 
-runMint :: Derived -> IO String
-runMint Derived{..} = do
-    ensureBlankWorkDir
-    faucetUtxo <- getFirstUtxoAt faucetAddr
-    printStep "Mint"
-    buildTransaction
-        [ opt "tx-in" faucetUtxo
-        , opt "tx-in-collateral" faucetUtxo
-        , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
-        , opt "tx-out-inline-datum-value" (10 :: Int)
-        , opt "mint" [str|100 #{assetClass}|]
-        , opt "mint-script-file" env_POLICY_FILE
-        , opt "mint-redeemer-value" (5 :: Int)
-        , opt "change-address" faucetAddr
-        , opt "out-file" env_TX_UNSIGNED
-        ]
+makeAppEnv :: IO AppEnv
+makeAppEnv = do
+    let policyFilePath = "dev-local/policy.plutus"
+        validatorFilePath = "dev-local/validator.plutus"
+        tokenName = "TEST_TOKEN"
+        assetAmount = "100"
+        numIterations = 10
+
+    policyId <- getPolicyId policyFilePath
+    faucetAddr <- env_FAUCET_WALLET_ADDR
+    tokenNameHex <- hexify tokenName
+    validatorAddress <- getAddress validatorFilePath
+    let assetClass = [str|#{policyId}.#{tokenNameHex}|]
+
+    printVar "faucetAddr" faucetAddr
+    printVar "validatorAddress" validatorAddress
+
+    pure $
+        AppEnv
+            { validatorAddress = validatorAddress
+            , assetClass = assetClass
+            , faucetAddr = faucetAddr
+            , policyFilePath = policyFilePath
+            , validatorFilePath = validatorFilePath
+            , assetAmount = assetAmount
+            , numIterations = numIterations
+            }
+
+finalizeCurrentTransaction :: IO ()
+finalizeCurrentTransaction = do
     signTransaction
         [ opt "signing-key-file" env_FAUCET_WALLET_SKEY_FILE
         , opt "tx-body-file" env_TX_UNSIGNED
@@ -237,12 +242,29 @@ runMint Derived{..} = do
         [ opt "tx-file" env_TX_SIGNED
         ]
 
+runMint :: AppEnv -> IO String
+runMint AppEnv{..} = do
+    ensureBlankWorkDir
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    printStep "Mint"
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "tx-in-collateral" faucetUtxo
+        , opt "tx-out" [str|#{validatorAddress} + 2000000 + #{assetAmount} #{assetClass}|]
+        , opt "tx-out-inline-datum-value" (10 :: Int)
+        , opt "mint" [str|#{assetAmount} #{assetClass}|]
+        , opt "mint-script-file" policyFilePath
+        , opt "mint-redeemer-value" (5 :: Int)
+        , opt "change-address" faucetAddr
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    finalizeCurrentTransaction
     mintTx <- getTransactionId env_TX_SIGNED
     printVar "mintTx" mintTx
     pure mintTx
 
-runSpend :: Derived -> String -> IO String
-runSpend Derived{..} lockedUtxo = do
+runSpend :: AppEnv -> String -> IO String
+runSpend AppEnv{..} lockedUtxo = do
     ensureBlankWorkDir
 
     faucetUtxo <- getFirstUtxoAt faucetAddr
@@ -252,28 +274,21 @@ runSpend Derived{..} lockedUtxo = do
     buildTransaction
         [ opt "tx-in" faucetUtxo
         , opt "tx-in" lockedUtxo
-        , opt "tx-in-script-file" env_VALIDATOR_FILE
+        , opt "tx-in-script-file" validatorFilePath
         , opt "tx-in-redeemer-value" (10 :: Int)
         , opt "tx-in-collateral" faucetUtxo
-        , opt "tx-out" [str|#{validatorAddress} + 2000000 + 100 #{assetClass}|]
+        , opt "tx-out" [str|#{validatorAddress} + 2000000 + #{assetAmount} #{assetClass}|]
         , opt "tx-out-inline-datum-value" (20 :: Int)
         , opt "change-address" faucetAddr
         , opt "out-file" env_TX_UNSIGNED
         ]
-    signTransaction
-        [ opt "signing-key-file" env_FAUCET_WALLET_SKEY_FILE
-        , opt "tx-body-file" env_TX_UNSIGNED
-        , opt "out-file" env_TX_SIGNED
-        ]
-    submitTransaction
-        [ opt "tx-file" env_TX_SIGNED
-        ]
+    finalizeCurrentTransaction
     spendTx <- getTransactionId env_TX_SIGNED
     printVar "spendTx" spendTx
     pure spendTx
 
-runBurn :: Derived -> String -> IO ()
-runBurn Derived{..} lockedUtxo = do
+runBurn :: AppEnv -> String -> IO ()
+runBurn AppEnv{..} lockedUtxo = do
     ensureBlankWorkDir
 
     faucetUtxo <- getFirstUtxoAt faucetAddr
@@ -283,48 +298,29 @@ runBurn Derived{..} lockedUtxo = do
     buildTransaction
         [ opt "tx-in" faucetUtxo
         , opt "tx-in" lockedUtxo
-        , opt "tx-in-script-file" env_VALIDATOR_FILE
+        , opt "tx-in-script-file" validatorFilePath
         , opt "tx-in-redeemer-value" (10 :: Int)
         , opt "tx-in-collateral" faucetUtxo
-        , opt "mint" [str|-100 #{assetClass}|]
-        , opt "mint-script-file" env_POLICY_FILE
+        , opt "mint" [str|-#{assetAmount} #{assetClass}|]
+        , opt "mint-script-file" policyFilePath
         , opt "mint-redeemer-value" (5 :: Int)
         , opt "change-address" faucetAddr
         , opt "out-file" env_TX_UNSIGNED
         ]
-    signTransaction
-        [ opt "signing-key-file" env_FAUCET_WALLET_SKEY_FILE
-        , opt "tx-body-file" env_TX_UNSIGNED
-        , opt "out-file" env_TX_SIGNED
-        ]
-    submitTransaction
-        [ opt "tx-file" env_TX_SIGNED
-        ]
+    finalizeCurrentTransaction
     burnTx <- getTransactionId env_TX_SIGNED
     printVar "burnTx" burnTx
 
 main :: IO ()
 main = do
-    printStep "Setup"
-
-    policyId <- getPolicyId env_POLICY_FILE
-    faucetAddr <- env_FAUCET_WALLET_ADDR
-    tokenNameHex <- env_TOKEN_NAME_HEX
-    validatorAddress <- getAddress env_VALIDATOR_FILE
-    let assetClass = [str|#{policyId}.#{tokenNameHex}|]
-
-    printVar "faucetAddr" faucetAddr
-    printVar "validatorAddress" validatorAddress
-
-    let derived = Derived validatorAddress assetClass faucetAddr
-
-    let mint = fstOutput <$> runMint derived
+    appEnv@AppEnv{numIterations} <- makeAppEnv
+    let mint = fstOutput <$> runMint appEnv
         spend u = do
             waitTillExists u
-            fstOutput <$> runSpend derived u
+            fstOutput <$> runSpend appEnv u
         burn u = do
             waitTillExists u
-            runBurn derived u
+            runBurn appEnv u
     Stream.iterateM spend mint
-        & Stream.take 4
+        & Stream.take (numIterations + 1)
         & Stream.fold (Fold.rmapM (maybe (pure ()) burn) Fold.latest)

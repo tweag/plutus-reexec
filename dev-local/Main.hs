@@ -272,6 +272,37 @@ runSpend Derived{..} lockedUtxo = do
     printVar "spendTx" spendTx
     pure spendTx
 
+runBurn :: Derived -> String -> IO ()
+runBurn Derived{..} lockedUtxo = do
+    ensureBlankWorkDir
+
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    printVar "faucetUtxo" faucetUtxo
+
+    printStep "Burn"
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "tx-in" lockedUtxo
+        , opt "tx-in-script-file" env_VALIDATOR_FILE
+        , opt "tx-in-redeemer-value" (10 :: Int)
+        , opt "tx-in-collateral" faucetUtxo
+        , opt "mint" [str|-100 #{assetClass}|]
+        , opt "mint-script-file" env_POLICY_FILE
+        , opt "mint-redeemer-value" (5 :: Int)
+        , opt "change-address" faucetAddr
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    signTransaction
+        [ opt "signing-key-file" env_FAUCET_WALLET_SKEY_FILE
+        , opt "tx-body-file" env_TX_UNSIGNED
+        , opt "out-file" env_TX_SIGNED
+        ]
+    submitTransaction
+        [ opt "tx-file" env_TX_SIGNED
+        ]
+    burnTx <- getTransactionId env_TX_SIGNED
+    printVar "burnTx" burnTx
+
 main :: IO ()
 main = do
     printStep "Setup"
@@ -287,8 +318,13 @@ main = do
 
     let derived = Derived validatorAddress assetClass faucetAddr
 
-    Stream.iterateM
-        (\u -> ((>>) (waitTillExists u)) $ fmap fstOutput $ runSpend derived u)
-        (fstOutput <$> runMint derived)
-        & Stream.take 15
-        & Stream.fold Fold.drain
+    let mint = fstOutput <$> runMint derived
+        spend u = do
+            waitTillExists u
+            fstOutput <$> runSpend derived u
+        burn u = do
+            waitTillExists u
+            runBurn derived u
+    Stream.iterateM spend mint
+        & Stream.take 4
+        & Stream.fold (Fold.rmapM (maybe (pure ()) burn) Fold.latest)

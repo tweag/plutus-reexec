@@ -1,7 +1,7 @@
 version: "0.5"
 
 processes:
-  cardano-node:
+  cardano-testnet:
     command: "dev-local/start-local-cardano-node"
     readiness_probe:
       exec:
@@ -12,31 +12,9 @@ processes:
       success_threshold: 1
       failure_threshold: 60
 
-  stream-socket:
-    command: "dev-local/stream-socket"
-    depends_on:
-      cardano-node:
-        condition: process_healthy
-
-  kuber:
-    command: "dev-local/run-kuber"
-    depends_on:
-      stream-socket:
-        condition: process_started
-    shutdown:
-      command: "podman rm -f kuber || true"
-    # Defines readiness by checking if port 8081 is open
-    readiness_probe:
-      http_get:
-        host: "127.0.0.1"
-        port: 8081
-        path: "/api/v3/health"
-      initial_delay_seconds: 2
-      period_seconds: 1
-
   populate:
     # Runs only after Kuber is healthy (port 8081 is open)
-    command: "dev-local/populate"
+    command: "cabal run dev-local"
     depends_on:
-      kuber:
+      cardano-testnet:
         condition: process_healthy

@@ -36,7 +36,7 @@ main = do
     -- TODO: Use a logging interface instead of using putStrLn.
     putStrLn "Started..."
 
-    let confPolicyMap = Map.fromList [(CM.script_hash x, x) | x <- scripts]
+    let confMap = Map.fromList [(CM.script_hash x, x) | x <- scripts]
         conn = mkLocalNodeConnectInfo networkId socketPath
     streamChainSyncEvents conn points
         & Stream.filter (not . isByron)
@@ -47,7 +47,7 @@ main = do
         & Stream.mapM (mkContext1 conn . uncurry mkContext0)
         & Stream.filter
             ( \ctx1@Context1{..} ->
-                not . Map.null . Map.restrictKeys confPolicyMap $
-                    Set.union (getMintPolicies context0) (getSpendPolicies ctx1)
+                not . Map.null . Map.restrictKeys confMap $
+                    Set.union (Set.map C.unPolicyId (getMintPolicies context0)) (getInputScriptAddrs ctx1)
             )
         & Stream.fold (Fold.drainMapM print)

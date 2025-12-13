@@ -7,4 +7,4 @@ process-compose -f ./dev-local/process-compose.yaml -p 3030
 echo "Cleaning up. Please wait..."
 
 sleep 5
-./dev-local/clean
+cabal run dev-local -- clean

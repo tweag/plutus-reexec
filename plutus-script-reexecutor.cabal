@@ -86,10 +86,12 @@ executable dev-local
   import:         lang
   main-is:        Main.hs
   hs-source-dirs: dev-local
+  other-modules:  Populate
   build-depends:
     , base
     , directory
     , filepath
+    , optparse-applicative
     , streamly-core
     , streamly-process
 

@@ -15,7 +15,7 @@ data ConfigMap = ConfigMap
     deriving (ToJSON, FromJSON) via Generically ConfigMap
 
 data ScriptDetails = ScriptDetails
-    { script_hash :: C.PolicyId
+    { script_hash :: C.ScriptHash
     , name :: Maybe String
     }
     deriving (Show, Eq, Generic)

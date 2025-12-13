@@ -4,7 +4,7 @@ module PSR.ContextBuilder (
     mkContext0,
     getMintPolicies,
     mkContext1,
-    getSpendPolicies,
+    getInputScriptAddrs,
 ) where
 
 --------------------------------------------------------------------------------
@@ -14,6 +14,7 @@ module PSR.ContextBuilder (
 import Cardano.Api qualified as C
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import PSR.Chain
@@ -78,6 +79,6 @@ mkContext1 conn c0@Context0{..} = do
             , ctxInputUtxoMap = umap
             }
 
-getSpendPolicies :: Context1 -> Set C.PolicyId
-getSpendPolicies Context1{..} =
-    Set.unions $ getPolicySet . getTxOutValue <$> Map.elems ctxInputUtxoMap
+getInputScriptAddrs :: Context1 -> Set C.ScriptHash
+getInputScriptAddrs Context1{..} =
+    Set.fromList $ catMaybes $ getTxOutScriptAddr <$> Map.elems ctxInputUtxoMap

@@ -142,7 +142,6 @@ makeEvaluationContext params lang = case lang of
 costModelsForEra :: C.LocalNodeConnectInfo -> C.ChainPoint -> C.ShelleyBasedEra era -> C.ExceptT String IO S.CostModels
 costModelsForEra cmLocalNodeConn cp era = do
     let q = C.queryProtocolParameters era
-    C.liftIO $ print ("Query: ", era)
     r <-
         C.liftIO $
             C.executeLocalStateQueryExpr

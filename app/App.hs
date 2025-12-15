@@ -4,7 +4,6 @@
 
 import Cardano.Api qualified as C
 import Control.Concurrent.Async qualified as Async
-import Control.Monad (guard)
 import Data.Function ((&))
 import Options
 import Options.Applicative
@@ -58,7 +57,7 @@ main = do
             & Stream.mapMaybe (mkContext2 config)
             & Stream.mapMaybeM (mkContext3 config)
             & Stream.trace
-                ( \(Context3 (Context2 ctx scripts) _ _) -> do
+                ( \(Context3 (Context2 _ scripts) _ _) -> do
                     -- pCompact ctx
                     putStrLn "Found scripts:"
                     mapM_ pCompact scripts

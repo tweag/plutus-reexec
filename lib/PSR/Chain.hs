@@ -4,6 +4,7 @@ module PSR.Chain (
     getTxOutValue,
     mkLocalNodeConnectInfo,
     getPolicySet,
+    getTxOutScriptAddr,
 )
 where
 
@@ -87,6 +88,14 @@ getEventTransactions (RollBackward cp _) = (cp, [])
 
 getTxOutValue :: C.TxOut ctx era -> C.Value
 getTxOutValue (C.TxOut _ val _ _) = C.txOutValueToValue val
+
+getTxOutScriptAddr :: C.TxOut ctx era -> Maybe C.ScriptHash
+getTxOutScriptAddr
+    (C.TxOut (C.AddressInEra _ (C.ShelleyAddress _ pCred _)) _ _ _) =
+        case C.fromShelleyPaymentCredential pCred of
+            C.PaymentCredentialByScript sHash -> Just sHash
+            _ -> Nothing
+getTxOutScriptAddr _ = Nothing
 
 getPolicySet :: C.Value -> Set C.PolicyId
 getPolicySet val = Map.keysSet (C.valueToPolicyAssets val)

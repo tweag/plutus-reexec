@@ -42,7 +42,7 @@ instance ToJSON ConfigMapFile where
 
 -- | Details of each script
 data ScriptDetails = ScriptDetails
-    { sdScriptHash :: C.PolicyId
+    { sdScriptHash :: C.ScriptHash
     , sdName :: Maybe Text
     , sdSource :: Maybe ScriptSource
     }
@@ -87,13 +87,13 @@ instance ToJSON ScriptSource where
 -}
 data ConfigMap = ConfigMap
     { cmStart :: Maybe C.ChainPoint
-    , cmScripts :: Map PolicyId ResolvedScript
+    , cmScripts :: Map ScriptHash ResolvedScript
     , cmLocalNodeConn :: LocalNodeConnectInfo
     }
 
 -- | Information relating to a loaded script
 data ResolvedScript = ResolvedScript
-    { rsScriptHash :: PolicyId
+    { rsScriptHash :: ScriptHash
     , rsName :: Maybe Text
     , rsSource :: Maybe ScriptSource
     , -- TODO: Should this be incorporated into rsScourse?

@@ -90,7 +90,7 @@ library
     , warp
     , yaml
 
-executable exec
+executable plutus-script-reexecutor 
   import:         lang
   main-is:        App.hs
   other-modules:  Options

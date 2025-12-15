@@ -11,7 +11,9 @@ let
 
   mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib project utils ghc; };
 
-  packages = {};
+  packages = {
+    default = projectFlake.packages."plutus-script-reexecutor:exe:plutus-script-reexecutor";
+  }; 
   
   devShells = rec {
     default = ghc966; 

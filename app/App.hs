@@ -56,13 +56,11 @@ main = do
           & Stream.concatMap (Stream.fromList . (\(a, b) -> (a,) <$> b))
           & Stream.mapM (mkContext1 cmLocalNodeConn . uncurry mkContext0)
           & Stream.mapMaybe (mkContext2 config)
-          & Stream.tap
-              ( Fold.drainMapM
-                  ( \(Context2 ctx scripts) -> do
-                      pCompact ctx
-                      putStrLn "Found scripts:"
-                      mapM_ pCompact scripts
-                  )
-              )
           & Stream.mapMaybeM (mkContext3 config)
+          & Stream.trace
+              ( \(Context3 (Context2 ctx scripts) _ _) -> do
+                  -- pCompact ctx
+                  putStrLn "Found scripts:"
+                  mapM_ pCompact scripts
+              )
           & Stream.fold Fold.drain

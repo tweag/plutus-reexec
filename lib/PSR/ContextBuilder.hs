@@ -8,7 +8,7 @@ module PSR.ContextBuilder (
     mkContext0,
     getMintPolicies,
     mkContext1,
-    getSpendPolicies,
+    getInputScriptAddrs,
     mkContext2,
     mkContext3,
 ) where
@@ -26,6 +26,7 @@ import Control.Monad (guard)
 import Control.Monad.Trans.Writer (WriterT (runWriterT))
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Lens.Micro
@@ -76,7 +77,7 @@ deriving instance Show Context1
 data Context2 where
     Context2 ::
         { context1 :: Context1
-        , ctxRelevantScripts :: Map.Map C.PolicyId ResolvedScript
+        , ctxRelevantScripts :: Map.Map C.ScriptHash ResolvedScript
         } ->
         Context2
 
@@ -85,7 +86,7 @@ data Context3 where
         { context2 :: Context2
         , -- TODO: This should probably be state?
           ctxCostModels :: S.CostModels
-        , ctxEvaluationContext :: Map C.PolicyId EvaluationContext
+        , ctxEvaluationContext :: Map C.ScriptHash EvaluationContext
         } ->
         Context3
 
@@ -105,8 +106,9 @@ mkContext0 cp (Transaction era tx) =
         , ctxMintValue = C.txMintValue . C.getTxBodyContent . C.getTxBody $ tx
         }
 
-getMintPolicies :: Context0 -> Set C.PolicyId
-getMintPolicies Context0{..} = getPolicySet $ C.txMintValueToValue ctxMintValue
+getMintPolicies :: Context0 -> Set C.ScriptHash
+getMintPolicies Context0{..} =
+    Set.map C.unPolicyId $ getPolicySet $ C.txMintValueToValue ctxMintValue
 
 mkContext1 :: C.LocalNodeConnectInfo -> Context0 -> IO Context1
 mkContext1 conn c0@Context0{..} = do
@@ -117,15 +119,15 @@ mkContext1 conn c0@Context0{..} = do
             , ctxInputUtxoMap = umap
             }
 
-getSpendPolicies :: Context1 -> Set C.PolicyId
-getSpendPolicies Context1{..} =
-    Set.unions $ getPolicySet . getTxOutValue <$> Map.elems ctxInputUtxoMap
+getInputScriptAddrs :: Context1 -> Set C.ScriptHash
+getInputScriptAddrs Context1{..} =
+    Set.fromList $ catMaybes $ getTxOutScriptAddr <$> Map.elems ctxInputUtxoMap
 
 mkContext2 :: ConfigMap -> Context1 -> Maybe Context2
 mkContext2 ConfigMap{..} ctx1@Context1{..} = do
     let interestingScripts =
             Map.restrictKeys cmScripts $
-                Set.union (getMintPolicies context0) (getSpendPolicies ctx1)
+                Set.union (getMintPolicies context0) (getInputScriptAddrs ctx1)
     guard (not $ Map.null interestingScripts)
     pure (Context2 ctx1 interestingScripts)
 
@@ -169,7 +171,7 @@ mkContext3 ConfigMap{..} ctx2@Context2{..} = do
                     (costModelsForEra cmLocalNodeConn (ctxPrevChainPoint ctx0))
 
         costs <- costModelForEra
-        let langs :: Map C.PolicyId PlutusLedgerLanguage
+        let langs :: Map C.ScriptHash PlutusLedgerLanguage
             langs = Map.mapMaybe (fmap (sepLanguage . fst) . rsScriptForEvaluation) ctxRelevantScripts
         res <- traverse (makeEvaluationContext costs) langs
         C.liftIO $ print (Map.keys res)

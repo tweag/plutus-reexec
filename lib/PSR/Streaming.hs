@@ -16,13 +16,14 @@ import Control.Concurrent (forkIO)
 import Control.Exception (throw)
 import Control.Monad (void)
 import Data.Function ((&))
+import Log (object, (.=))
 import Ouroboros.Network.Protocol.ChainSync.Client (
     ClientStIdle (..),
     ClientStIntersect (..),
     ClientStNext (..),
  )
 import PSR.Chain
-import PSR.ConfigMap (cmLocalNodeConn)
+import PSR.ConfigMap (ResolvedScript (..), cmLocalNodeConn)
 import PSR.ContextBuilder
 import PSR.Types
 import Streamly.Data.Fold.Prelude qualified as Fold
@@ -183,8 +184,17 @@ streamTransactionContext ctx1@BlockContext{..} =
             ( \TransactionContext{..} -> do
                 -- pCompact ctx
                 logTrace_ "Found scripts:"
-                mapM_ pCompact ctxRelevantScripts
+                mapM_ printResolvedScript ctxRelevantScripts
             )
+
+printResolvedScript :: ResolvedScript -> App ()
+printResolvedScript ResolvedScript{..} =
+    logTrace "Script" $
+        object
+            [ "rsScriptHash" .= rsScriptHash
+            , "rsName" .= rsName
+            , "rsSource" .= rsSource
+            ]
 
 --------------------------------------------------------------------------------
 -- Main

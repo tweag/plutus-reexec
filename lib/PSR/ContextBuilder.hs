@@ -22,8 +22,10 @@ import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text (Text)
 import PSR.Chain
-import PSR.ConfigMap (ConfigMap (..), ResolvedScript (..), ScriptEvaluationParameters (..))
+import PSR.ConfigMap (ResolvedScript (..), ScriptEvaluationParameters (..), cmLocalNodeConn, cmScripts)
+import PSR.Types
 import PlutusLedgerApi.Common
 import PlutusLedgerApi.V1.EvaluationContext qualified as V1
 import PlutusLedgerApi.V2.EvaluationContext qualified as V2
@@ -55,18 +57,18 @@ data BlockContext era where
 deriving instance Show (BlockContext era)
 
 mkBlockContext ::
-    C.LocalNodeConnectInfo ->
     C.ChainPoint ->
     C.ShelleyBasedEra era ->
     [C.Tx era] ->
-    IO (BlockContext era)
-mkBlockContext conn prevCp era txs = do
+    App (BlockContext era)
+mkBlockContext prevCp era txs = do
+    conn <- view $ confConfigMap . cmLocalNodeConn
     let query =
             (,)
                 <$> utxoMapQuery era txs
                 <*> costModelsQuery era
     -- NOTE: We can catch CostModelsQueryException and choose to retry or skip.
-    (umap, costs) <- runLocalStateQueryExpr conn prevCp query
+    (umap, costs) <- C.liftIO $ runLocalStateQueryExpr conn prevCp query
     pure $
         BlockContext
             { ctxPrevChainPoint = prevCp
@@ -104,48 +106,49 @@ getInputScriptAddrs utxoMap tx =
      in Set.fromList $ mapMaybe getTxOutScriptAddr utxoList
 
 getNonEmptyIntersection ::
-    ConfigMap ->
+    Map C.ScriptHash ResolvedScript ->
     BlockContext era ->
     C.Tx era ->
     Maybe (Map.Map C.ScriptHash ResolvedScript)
-getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
+getNonEmptyIntersection scripts BlockContext{..} tx = do
     let interestingScripts =
-            Map.restrictKeys cmScripts $
+            Map.restrictKeys scripts $
                 Set.union (getMintPolicies tx) (getInputScriptAddrs ctxInputUtxoMap tx)
     guard (not $ Map.null interestingScripts)
-    pure $ interestingScripts
+    pure interestingScripts
 
 makeEvaluationContext ::
     S.CostModels ->
     PlutusLedgerLanguage ->
-    C.ExceptT String IO EvaluationContext
+    C.ExceptT Text App EvaluationContext
 makeEvaluationContext params lang = case lang of
     PlutusV1 -> run L.PlutusV1 V1.mkEvaluationContext
     PlutusV2 -> run L.PlutusV2 V2.mkEvaluationContext
     PlutusV3 -> run L.PlutusV3 V3.mkEvaluationContext
   where
     run lng f = case Map.lookup lng (L.costModelsValid params) of
-        Just costs -> C.modifyError show . fmap fst . runWriterT $ f (L.getCostModelParams costs)
-        Nothing -> C.throwError $ "Unknown cost model for lang: " ++ show lang
+        Just costs -> C.modifyError C.textShow . fmap fst . runWriterT $ f (L.getCostModelParams costs)
+        Nothing -> C.throwError $ "Unknown cost model for lang: " <> C.textShow lang
 
 getScriptEvaluationContext ::
     BlockContext era ->
     Map C.ScriptHash ResolvedScript ->
-    IO (Maybe (Map C.ScriptHash EvaluationContext))
+    App (Maybe (Map C.ScriptHash EvaluationContext))
 getScriptEvaluationContext BlockContext{..} relevantScripts = do
     let langs :: Map C.ScriptHash PlutusLedgerLanguage
         langs = Map.mapMaybe (fmap (sepLanguage . fst) . rsScriptForEvaluation) relevantScripts
     res <- C.runExceptT $ traverse (makeEvaluationContext ctxCostModels) langs
     case res of
-        Left err -> Nothing <$ putStrLn err
+        Left err -> Nothing <$ logAttention_ err
         Right evalContexts -> do
             C.liftIO $ print (Map.keys evalContexts)
-            pure $ Just $ evalContexts
+            pure $ Just evalContexts
 
 mkTransactionContext ::
-    ConfigMap -> BlockContext era -> C.Tx era -> IO (Maybe (TransactionContext era))
-mkTransactionContext cm bc tx = do
-    case getNonEmptyIntersection cm bc tx of
+    BlockContext era -> C.Tx era -> App (Maybe (TransactionContext era))
+mkTransactionContext bc tx = do
+    scripts <- view $ confConfigMap . cmScripts
+    case getNonEmptyIntersection scripts bc tx of
         Nothing -> pure Nothing
         Just nei -> do
             msec <- getScriptEvaluationContext bc nei

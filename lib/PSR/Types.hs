@@ -8,16 +8,23 @@ module PSR.Types (
     confLoggerEnv,
     confConfigMap,
     confStorage,
-        ChainSyncEvent (..),
-    ChainSyncEventException (..), 
+    ChainSyncEvent (..),
+    ChainSyncEventException (..),
     Block (..),
     isByron,
 ) where
 
+--------------------------------------------------------------------------------
+-- Imports
+--------------------------------------------------------------------------------
+
+import Cardano.Api qualified as C
+import Control.Exception (Exception)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..))
 import Data.Aeson.Types (Pair)
 import Data.Text (Text)
 import Data.Time (getCurrentTime)
+import GHC.Generics (Generic)
 import Lens.Micro.Platform
 import Log (LogLevel, logMessageIO)
 import Log.Class (MonadLog (..))
@@ -63,15 +70,6 @@ instance MonadLog App where
     logMessage level message data_ = App . ReaderT $ \appEnv -> do
         time <- getCurrentTime
         logMessageIO (_confLoggerEnv appEnv) time level message data_
-
-
---------------------------------------------------------------------------------
--- Imports
---------------------------------------------------------------------------------
-
-import Cardano.Api qualified as C
-import Control.Exception (Exception)
-import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
 -- Types

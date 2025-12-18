@@ -2,7 +2,6 @@ module PSR.Types (
     ChainSyncEvent (..),
     ChainSyncEventException (..),
     Block (..),
-    isByron,
 ) where
 
 --------------------------------------------------------------------------------
@@ -21,10 +20,6 @@ data ChainSyncEvent
     = RollForward C.BlockInMode C.ChainTip
     | RollBackward C.ChainPoint C.ChainTip
     deriving stock (Show, Generic)
-
-isByron :: ChainSyncEvent -> Bool
-isByron (RollForward (C.BlockInMode C.ByronEra _) _) = True
-isByron _ = False
 
 data ChainSyncEventException = NoIntersectionFound
     deriving stock (Show)

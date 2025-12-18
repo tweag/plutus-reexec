@@ -6,6 +6,7 @@ module PSR.ContextBuilder (
     mkBlockContext,
     mkTransactionContext,
     evaluateTransaction,
+    proveAlonzoEraOnwards,
 ) where
 
 --------------------------------------------------------------------------------
@@ -29,6 +30,14 @@ import PSR.Evaluation.Api (evaluateTransactionExecutionUnitsShelley)
 -- Block Context
 --------------------------------------------------------------------------------
 
+proveAlonzoEraOnwards :: C.ShelleyBasedEra era -> Maybe (C.AlonzoEraOnwards era)
+proveAlonzoEraOnwards = \case
+    C.ShelleyBasedEraAlonzo -> Just C.AlonzoEraOnwardsAlonzo
+    C.ShelleyBasedEraBabbage -> Just C.AlonzoEraOnwardsBabbage
+    C.ShelleyBasedEraConway -> Just C.AlonzoEraOnwardsConway
+    C.ShelleyBasedEraDijkstra -> Just C.AlonzoEraOnwardsDijkstra
+    _ -> Nothing
+
 -- NOTE: Our decisions are made based on the context built. At different stages
 -- of the pipeline the context we are looking at keeps increasing and our
 -- decisions are based on that.
@@ -39,8 +48,8 @@ import PSR.Evaluation.Api (evaluateTransactionExecutionUnitsShelley)
 data BlockContext era where
     BlockContext ::
         { ctxPrevChainPoint :: C.ChainPoint
-        , -- TODO: Use AlonzoEraOnwards here instead of ShelleyBasedEra
-          ctxShelleyBasedEra :: C.ShelleyBasedEra era
+        , -- NOTE: Use C.convert to get C.ShelleyBasedEra
+          ctxAlonzoEraOnwards :: C.AlonzoEraOnwards era
         , ctxTransactions :: [C.Tx era]
         , ctxInputUtxoMap :: C.UTxO era
         , -- NOTE: The protocol parameters (and hence the cost models) may change
@@ -56,14 +65,15 @@ data BlockContext era where
 mkBlockContext ::
     C.LocalNodeConnectInfo ->
     C.ChainPoint ->
-    C.ShelleyBasedEra era ->
+    C.AlonzoEraOnwards era ->
     [C.Tx era] ->
     IO (BlockContext era)
 mkBlockContext conn prevCp era txs = do
-    let query =
+    let sbe = C.convert era
+        query =
             BlockContext prevCp era txs
-                <$> utxoMapQuery era txs
-                <*> pParamsQuery era
+                <$> utxoMapQuery sbe txs
+                <*> pParamsQuery sbe
                 <*> eraHistoryQuery
                 <*> sysStartQuery
     -- NOTE: We can catch CostModelsQueryException and choose to retry or skip.

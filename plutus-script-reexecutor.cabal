@@ -61,7 +61,7 @@ library
 
   build-depends:
     , aeson
-    , base                         >=4.9 && <5
+    , base                         >=4.9    && <5
     , bytestring
     , cardano-api
     , cardano-ledger-alonzo
@@ -72,6 +72,7 @@ library
     , data-default
     , memory
     , microlens
+    , openapi3                     ^>=3.2.4
     , ouroboros-consensus
     , ouroboros-consensus-cardano
     , ouroboros-network-protocols
@@ -79,9 +80,12 @@ library
     , prometheus-client
     , prometheus-metrics-ghc
     , servant
+    , servant-openapi3
     , servant-queryparam-core
+    , servant-queryparam-openapi3
     , servant-queryparam-server
     , servant-server
+    , servant-swagger-ui
     , sqlite-simple
     , streamly
     , streamly-core

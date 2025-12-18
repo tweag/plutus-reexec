@@ -2,7 +2,14 @@ module PSR.HTTP.Server (
     run,
 ) where
 
-import PSR.HTTP.API
+import PSR.HTTP.API (
+    EventFilterParams (_filterQueryParam_name),
+    EventRoutes (..),
+    FullAPI,
+    SiteRoutes (..),
+    fullApi,
+    serveOpenApiUI,
+ )
 import PSR.Storage.Interface (Storage (..))
 
 import Control.Applicative ((<|>))
@@ -16,13 +23,15 @@ import Servant
 import Servant.QueryParam.Server.Record ()
 import Servant.Server.Generic (AsServer)
 
-server :: Storage -> Server ServerAPI
-server Storage{..} = siteH
+server :: Storage -> Server FullAPI
+server Storage{..} =
+    siteH :<|> serveOpenApiUI
   where
     siteH :: SiteRoutes AsServer
     siteH =
         SiteRoutes
             { events = eventsH
+            -- , openAPIDocs = redocSchemaUIServer siteSwagger
             }
 
     eventsH :: EventRoutes AsServer
@@ -42,4 +51,4 @@ server Storage{..} = siteH
 run :: Storage -> Warp.Port -> IO ()
 run storage port = do
     _ <- register ghcMetrics
-    Warp.run port (prometheus def $ serve siteApi (server storage))
+    Warp.run port (prometheus def $ serve fullApi (server storage))

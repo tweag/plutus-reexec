@@ -163,6 +163,7 @@ streamChainSyncEvents ::
 streamChainSyncEvents conn points =
     Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
 
+-- TODO: Filter out non-alanzo based blocks
 streamBlocks :: CM.ConfigMap -> [C.ChainPoint] -> Stream IO (C.ChainPoint, Block)
 streamBlocks CM.ConfigMap{..} points =
     streamChainSyncEvents cmLocalNodeConn points

@@ -52,16 +52,16 @@ library
     PSR.Chain
     PSR.ConfigMap
     PSR.ContextBuilder
-    PSR.Storage.Interface
-    PSR.Storage.SQLite
-    PSR.Streaming
     PSR.HTTP
     PSR.HTTP.API
     PSR.HTTP.Server
+    PSR.Storage.Interface
+    PSR.Storage.SQLite
+    PSR.Streaming
 
   build-depends:
     , aeson
-    , base                         >=4.9 && <5
+    , base                         >=4.9    && <5
     , bytestring
     , cardano-api
     , cardano-ledger-alonzo
@@ -72,6 +72,7 @@ library
     , data-default
     , memory
     , microlens
+    , openapi3                     ^>=3.2.4
     , ouroboros-consensus
     , ouroboros-consensus-cardano
     , ouroboros-network-protocols
@@ -79,14 +80,15 @@ library
     , prometheus-client
     , prometheus-metrics-ghc
     , servant
+    , servant-openapi3
     , servant-queryparam-core
+    , servant-queryparam-openapi3
     , servant-queryparam-server
     , servant-server
+    , servant-swagger-ui
+    , sqlite-simple
     , streamly
     , streamly-core
-    , sqlite-simple
-    , prometheus-client
-    , prometheus-metrics-ghc
     , text
     , time
     , transformers
@@ -95,7 +97,7 @@ library
     , warp
     , yaml
 
-executable plutus-script-reexecutor 
+executable plutus-script-reexecutor
   import:         lang
   main-is:        App.hs
   other-modules:  Options

@@ -26,6 +26,7 @@ import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Text (Text)
 import PSR.Chain
 import PSR.ConfigMap (ConfigMap (..), ResolvedScript (..), ScriptEvaluationParameters (..))
 import PlutusLedgerApi.Common
@@ -47,7 +48,8 @@ import PlutusLedgerApi.V3.EvaluationContext qualified as V3
 data BlockContext era where
     BlockContext ::
         { ctxPrevChainPoint :: C.ChainPoint
-        , ctxShelleyBasedEra :: C.ShelleyBasedEra era
+        , -- TODO: Use AlonzoEraOnwards here instead of ShelleyBasedEra
+          ctxShelleyBasedEra :: C.ShelleyBasedEra era
         , ctxTransactions :: [C.Tx era]
         , ctxInputUtxoMap :: C.UTxO era
         , -- NOTE: The protocol parameters (and hence the cost models) may change
@@ -132,17 +134,38 @@ mkTransactionContext ::
     ConfigMap -> BlockContext era -> C.Tx era -> IO (Maybe (TransactionContext era))
 mkTransactionContext cm bc@BlockContext{..} tx = do
     -- NOTE: convert the era to the script's only eras
-    case tx of
+    {-
+        (evalResults ::
+                 Map
+                   (L.ConwayPlutusPurpose L.AsIx L.ConwayEra)
+                   (Either
+                      (L.TransactionScriptFailure L.ConwayEra)
+                      ([Text], L.ExUnits))) <- case tx of
+            C.ShelleyTx (C.ShelleyBasedEraConway) tx' -> do
+                let evalResults =
+                        L.evalTxExUnitsWithLogs
+                            ctxPParams
+                            tx'
+                            (C.toLedgerUTxO ctxShelleyBasedEra ctxInputUtxoMap)
+                            (C.unLedgerEpochInfo (C.toLedgerEpochInfo ctxEraHistory))
+                            ctxSysStart
+    -}
+    ( evalResults ::
+            Map
+                C.ScriptWitnessIndex
+                (Either C.ScriptExecutionError ([Text], C.ExecutionUnits))
+        ) <- case tx of
         C.ShelleyTx (C.ShelleyBasedEraConway) tx' -> do
             let evalResults =
-                    L.evalTxExUnitsWithLogs
-                        ctxPParams
-                        tx'
-                        (C.toLedgerUTxO ctxShelleyBasedEra ctxInputUtxoMap)
-                        (C.unLedgerEpochInfo (C.toLedgerEpochInfo ctxEraHistory))
+                    C.evaluateTransactionExecutionUnitsShelley
+                        ctxShelleyBasedEra
                         ctxSysStart
-            print evalResults
-        _ -> print ()
+                        (C.toLedgerEpochInfo ctxEraHistory)
+                        (C.LedgerProtocolParameters ctxPParams)
+                        ctxInputUtxoMap
+                        tx'
+            pure evalResults
+        _ -> pure Map.empty
 
     case getNonEmptyIntersection cm bc tx of
         Nothing -> pure Nothing

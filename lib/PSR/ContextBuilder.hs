@@ -13,7 +13,11 @@ module PSR.ContextBuilder (
 
 import Cardano.Api qualified as C
 import Cardano.Api.Ledger qualified as L
+import Cardano.Ledger.Alonzo.Core qualified as L
+import Cardano.Ledger.Alonzo.Tx qualified as L
+import Cardano.Ledger.Api qualified as L
 import Cardano.Ledger.Api.Scripts qualified as S
+import Cardano.Ledger.Conway.Tx qualified as L
 import Cardano.Ledger.Plutus qualified as L
 import Control.Monad (guard)
 import Control.Monad.Trans.Writer (WriterT (runWriterT))
@@ -45,14 +49,16 @@ data BlockContext era where
         { ctxPrevChainPoint :: C.ChainPoint
         , ctxShelleyBasedEra :: C.ShelleyBasedEra era
         , ctxTransactions :: [C.Tx era]
-        , ctxInputUtxoMap :: Map C.TxIn (C.TxOut C.CtxUTxO era)
+        , ctxInputUtxoMap :: C.UTxO era
         , -- NOTE: The protocol parameters (and hence the cost models) may change
           -- in a running node. It may be okay to poll this at the block boundary.
-          ctxCostModels :: S.CostModels
+          ctxPParams :: L.PParams (C.ShelleyLedgerEra era)
+        , ctxEraHistory :: C.EraHistory
+        , ctxSysStart :: C.SystemStart
         } ->
         BlockContext era
 
-deriving instance Show (BlockContext era)
+-- deriving instance Show (BlockContext era)
 
 mkBlockContext ::
     C.LocalNodeConnectInfo ->
@@ -62,19 +68,13 @@ mkBlockContext ::
     IO (BlockContext era)
 mkBlockContext conn prevCp era txs = do
     let query =
-            (,)
+            BlockContext prevCp era txs
                 <$> utxoMapQuery era txs
-                <*> costModelsQuery era
+                <*> pParamsQuery era
+                <*> eraHistoryQuery
+                <*> sysStartQuery
     -- NOTE: We can catch CostModelsQueryException and choose to retry or skip.
-    (umap, costs) <- runLocalStateQueryExpr conn prevCp query
-    pure $
-        BlockContext
-            { ctxPrevChainPoint = prevCp
-            , ctxShelleyBasedEra = era
-            , ctxTransactions = txs
-            , ctxInputUtxoMap = C.unUTxO umap
-            , ctxCostModels = costs
-            }
+    runLocalStateQueryExpr conn prevCp query
 
 --------------------------------------------------------------------------------
 -- Transaction Context
@@ -84,7 +84,6 @@ data TransactionContext era where
     TransactionContext ::
         { ctxTransaction :: C.Tx era
         , ctxRelevantScripts :: Map.Map C.ScriptHash ResolvedScript
-        , ctxEvaluationContext :: Map C.ScriptHash EvaluationContext
         } ->
         TransactionContext era
 
@@ -109,9 +108,10 @@ getNonEmptyIntersection ::
     C.Tx era ->
     Maybe (Map.Map C.ScriptHash ResolvedScript)
 getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
-    let interestingScripts =
+    let inpUtxoMap = C.unUTxO ctxInputUtxoMap
+        interestingScripts =
             Map.restrictKeys cmScripts $
-                Set.union (getMintPolicies tx) (getInputScriptAddrs ctxInputUtxoMap tx)
+                Set.union (getMintPolicies tx) (getInputScriptAddrs inpUtxoMap tx)
     guard (not $ Map.null interestingScripts)
     pure $ interestingScripts
 
@@ -128,27 +128,22 @@ makeEvaluationContext params lang = case lang of
         Just costs -> C.modifyError show . fmap fst . runWriterT $ f (L.getCostModelParams costs)
         Nothing -> C.throwError $ "Unknown cost model for lang: " ++ show lang
 
-getScriptEvaluationContext ::
-    BlockContext era ->
-    Map C.ScriptHash ResolvedScript ->
-    IO (Maybe (Map C.ScriptHash EvaluationContext))
-getScriptEvaluationContext BlockContext{..} relevantScripts = do
-    let langs :: Map C.ScriptHash PlutusLedgerLanguage
-        langs = Map.mapMaybe (fmap (sepLanguage . fst) . rsScriptForEvaluation) relevantScripts
-    res <- C.runExceptT $ traverse (makeEvaluationContext ctxCostModels) langs
-    case res of
-        Left err -> Nothing <$ putStrLn err
-        Right evalContexts -> do
-            C.liftIO $ print (Map.keys evalContexts)
-            pure $ Just $ evalContexts
-
 mkTransactionContext ::
     ConfigMap -> BlockContext era -> C.Tx era -> IO (Maybe (TransactionContext era))
-mkTransactionContext cm bc tx = do
+mkTransactionContext cm bc@BlockContext{..} tx = do
+    -- NOTE: convert the era to the script's only eras
+    case tx of
+        C.ShelleyTx (C.ShelleyBasedEraConway) tx' -> do
+            let evalResults =
+                    L.evalTxExUnitsWithLogs
+                        ctxPParams
+                        tx'
+                        (C.toLedgerUTxO ctxShelleyBasedEra ctxInputUtxoMap)
+                        (C.unLedgerEpochInfo (C.toLedgerEpochInfo ctxEraHistory))
+                        ctxSysStart
+            print evalResults
+        _ -> print ()
+
     case getNonEmptyIntersection cm bc tx of
         Nothing -> pure Nothing
-        Just nei -> do
-            msec <- getScriptEvaluationContext bc nei
-            pure $ case msec of
-                Nothing -> Nothing
-                Just sec -> Just $ TransactionContext tx nei sec
+        Just nei -> pure $ Just $ TransactionContext tx nei

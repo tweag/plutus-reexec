@@ -1,6 +1,5 @@
 module PSR.Streaming (
     streamChainSyncEvents,
-    isByron,
     unshiftFst,
     streamBlocks,
     streamTransactionContext,
@@ -172,11 +171,9 @@ streamChainSyncEvents ::
 streamChainSyncEvents conn points =
     Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
 
--- TODO: Filter out non-alanzo based blocks
 streamBlocks :: Events -> CM.ConfigMap -> [C.ChainPoint] -> Stream IO (C.ChainPoint, Block)
 streamBlocks events CM.ConfigMap{..} points =
     streamChainSyncEvents cmLocalNodeConn points
-        & Stream.filter (not . isByron)
         & Stream.trace (traceChainSyncEvent events)
         & fmap getEventBlock
         & Stream.postscanl unshiftFst
@@ -205,7 +202,10 @@ mainLoop events cm@CM.ConfigMap{..} points =
     streamBlocks events cm points
         & Stream.fold (Fold.drainMapM (uncurry consumeBlock))
   where
-    consumeBlock previousChainPt (Block era txList) = do
-        ctx1 <- mkBlockContext cmLocalNodeConn previousChainPt era txList
-        streamTransactionContext cm ctx1
-            & Stream.fold Fold.drain
+    consumeBlock previousChainPt (Block sbe txList) = do
+        case proveAlonzoEraOnwards sbe of
+            Nothing -> pure ()
+            Just era -> do
+                ctx1 <- mkBlockContext cmLocalNodeConn previousChainPt era txList
+                streamTransactionContext cm ctx1
+                    & Stream.fold Fold.drain

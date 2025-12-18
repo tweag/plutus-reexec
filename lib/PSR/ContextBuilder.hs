@@ -5,6 +5,7 @@ module PSR.ContextBuilder (
     TransactionContext (..),
     mkBlockContext,
     mkTransactionContext,
+    evaluateTransaction,
 ) where
 
 --------------------------------------------------------------------------------
@@ -13,14 +14,7 @@ module PSR.ContextBuilder (
 
 import Cardano.Api qualified as C
 import Cardano.Api.Ledger qualified as L
-import Cardano.Ledger.Alonzo.Core qualified as L
-import Cardano.Ledger.Alonzo.Tx qualified as L
-import Cardano.Ledger.Api qualified as L
-import Cardano.Ledger.Api.Scripts qualified as S
-import Cardano.Ledger.Conway.Tx qualified as L
-import Cardano.Ledger.Plutus qualified as L
 import Control.Monad (guard)
-import Control.Monad.Trans.Writer (WriterT (runWriterT))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
@@ -28,11 +22,8 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import PSR.Chain
-import PSR.ConfigMap (ConfigMap (..), ResolvedScript (..), ScriptEvaluationParameters (..))
-import PlutusLedgerApi.Common
-import PlutusLedgerApi.V1.EvaluationContext qualified as V1
-import PlutusLedgerApi.V2.EvaluationContext qualified as V2
-import PlutusLedgerApi.V3.EvaluationContext qualified as V3
+import PSR.ConfigMap (ConfigMap (..), ResolvedScript (..))
+import PSR.Evaluation.Api (evaluateTransactionExecutionUnitsShelley)
 
 --------------------------------------------------------------------------------
 -- Block Context
@@ -115,58 +106,28 @@ getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
             Map.restrictKeys cmScripts $
                 Set.union (getMintPolicies tx) (getInputScriptAddrs inpUtxoMap tx)
     guard (not $ Map.null interestingScripts)
-    pure $ interestingScripts
-
-makeEvaluationContext ::
-    S.CostModels ->
-    PlutusLedgerLanguage ->
-    C.ExceptT String IO EvaluationContext
-makeEvaluationContext params lang = case lang of
-    PlutusV1 -> run L.PlutusV1 V1.mkEvaluationContext
-    PlutusV2 -> run L.PlutusV2 V2.mkEvaluationContext
-    PlutusV3 -> run L.PlutusV3 V3.mkEvaluationContext
-  where
-    run lng f = case Map.lookup lng (L.costModelsValid params) of
-        Just costs -> C.modifyError show . fmap fst . runWriterT $ f (L.getCostModelParams costs)
-        Nothing -> C.throwError $ "Unknown cost model for lang: " ++ show lang
+    pure interestingScripts
 
 mkTransactionContext ::
     ConfigMap -> BlockContext era -> C.Tx era -> IO (Maybe (TransactionContext era))
-mkTransactionContext cm bc@BlockContext{..} tx = do
-    -- NOTE: convert the era to the script's only eras
-    {-
-        (evalResults ::
-                 Map
-                   (L.ConwayPlutusPurpose L.AsIx L.ConwayEra)
-                   (Either
-                      (L.TransactionScriptFailure L.ConwayEra)
-                      ([Text], L.ExUnits))) <- case tx of
-            C.ShelleyTx (C.ShelleyBasedEraConway) tx' -> do
-                let evalResults =
-                        L.evalTxExUnitsWithLogs
-                            ctxPParams
-                            tx'
-                            (C.toLedgerUTxO ctxShelleyBasedEra ctxInputUtxoMap)
-                            (C.unLedgerEpochInfo (C.toLedgerEpochInfo ctxEraHistory))
-                            ctxSysStart
-    -}
-    ( evalResults ::
-            Map
-                C.ScriptWitnessIndex
-                (Either C.ScriptExecutionError ([Text], C.ExecutionUnits))
-        ) <- case tx of
-        C.ShelleyTx (C.ShelleyBasedEraConway) tx' -> do
-            let evalResults =
-                    C.evaluateTransactionExecutionUnitsShelley
-                        ctxShelleyBasedEra
-                        ctxSysStart
-                        (C.toLedgerEpochInfo ctxEraHistory)
-                        (C.LedgerProtocolParameters ctxPParams)
-                        ctxInputUtxoMap
-                        tx'
-            pure evalResults
-        _ -> pure Map.empty
-
+mkTransactionContext cm bc tx = do
     case getNonEmptyIntersection cm bc tx of
         Nothing -> pure Nothing
         Just nei -> pure $ Just $ TransactionContext tx nei
+
+evaluateTransaction ::
+    BlockContext era ->
+    C.Tx era ->
+    Map
+        C.ScriptWitnessIndex
+        (Either C.ScriptExecutionError ([Text], C.ExecutionUnits))
+evaluateTransaction BlockContext{..} tx = do
+    case tx of
+        C.ShelleyTx era tx' -> do
+            evaluateTransactionExecutionUnitsShelley
+                era
+                ctxSysStart
+                (C.toLedgerEpochInfo ctxEraHistory)
+                (C.LedgerProtocolParameters ctxPParams)
+                ctxInputUtxoMap
+                tx'

@@ -20,14 +20,11 @@ where
 import Cardano.Api (SocketPath)
 import Cardano.Api qualified as C
 import Cardano.Api.Ledger qualified as L
-import Cardano.Ledger.Alonzo.PParams (ppCostModelsL)
-import Cardano.Ledger.Api.Scripts qualified as S
 import Control.Exception (Exception, throw)
 import Data.Functor.Identity (Identity (..))
 import Data.Map qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Lens.Micro
 import PSR.Types
 
 --------------------------------------------------------------------------------
@@ -58,11 +55,6 @@ utxoMapQuery era txList = do
         Left err -> throw $ QeUnsupportedNtcVersionError err
         Right (Left err) -> throw $ QeEraMismatch err
         Right (Right val) -> pure val
-
-data CostModelsQueryException
-    = CMQEUnsupportedEra String
-    deriving stock (Show)
-    deriving anyclass (Exception)
 
 pParamsQuery ::
     C.ShelleyBasedEra era ->

@@ -23,7 +23,7 @@ import Ouroboros.Network.Protocol.ChainSync.Client (
     ClientStNext (..),
  )
 import PSR.Chain
-import PSR.ConfigMap (ResolvedScript (..), cmLocalNodeConn)
+import PSR.ConfigMap (ResolvedScript (..))
 import PSR.ContextBuilder
 import PSR.Types
 import Streamly.Data.Fold.Prelude qualified as Fold
@@ -160,12 +160,15 @@ streamChainSyncEvents ::
     C.LocalNodeConnectInfo ->
     -- | The points on the chain to start streaming from
     [C.ChainPoint] ->
-    Stream App ChainSyncEvent
+    Stream (App context err) ChainSyncEvent
 streamChainSyncEvents conn points =
     Stream.morphInner C.liftIO $
         Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
 
-streamBlocks :: C.LocalNodeConnectInfo -> [C.ChainPoint] -> Stream App (C.ChainPoint, Block)
+streamBlocks ::
+    C.LocalNodeConnectInfo ->
+    [C.ChainPoint] ->
+    Stream (App context err) (C.ChainPoint, Block)
 streamBlocks conn points = do
     streamChainSyncEvents conn points
         & Stream.filter (not . isByron)
@@ -176,7 +179,9 @@ streamBlocks conn points = do
         & Stream.mapMaybe (\(a, b) -> (a,) <$> b)
 
 streamTransactionContext ::
-    BlockContext era -> Stream App (TransactionContext era)
+    (HasConfigMap context, HasLoggerEnv context) =>
+    BlockContext era ->
+    Stream (App context err) (TransactionContext era)
 streamTransactionContext ctx1@BlockContext{..} =
     Stream.fromList ctxTransactions
         & Stream.mapMaybeM (mkTransactionContext ctx1)
@@ -187,7 +192,7 @@ streamTransactionContext ctx1@BlockContext{..} =
                 mapM_ printResolvedScript ctxRelevantScripts
             )
 
-printResolvedScript :: ResolvedScript -> App ()
+printResolvedScript :: (HasLoggerEnv context) => ResolvedScript -> App context err ()
 printResolvedScript ResolvedScript{..} =
     logTrace "Script" $
         object
@@ -200,9 +205,9 @@ printResolvedScript ResolvedScript{..} =
 -- Main
 --------------------------------------------------------------------------------
 
-mainLoop :: [C.ChainPoint] -> App ()
+mainLoop :: (HasConfigMap context, HasLoggerEnv context) => [C.ChainPoint] -> App context err ()
 mainLoop points = do
-    conn <- view $ confConfigMap . cmLocalNodeConn
+    conn <- view cmLocalNodeConn
     streamBlocks conn points
         & Stream.fold (Fold.drainMapM (uncurry consumeBlock))
   where

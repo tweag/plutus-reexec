@@ -102,9 +102,12 @@ library
 
 executable plutus-script-reexecutor
   import:         lang
-  main-is:        App.hs
-  other-modules:  Options
   hs-source-dirs: app
+  main-is:        App.hs
+  other-modules:
+    Errors
+    Options
+
   build-depends:
     , async
     , base                      >=4.9 && <5
@@ -117,6 +120,7 @@ executable plutus-script-reexecutor
     , pretty-simple
     , streamly
     , streamly-core
+    , text
     , warp
     , yaml
 

@@ -24,7 +24,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import PSR.Chain
-import PSR.ConfigMap (ResolvedScript (..), ScriptEvaluationParameters (..), cmLocalNodeConn, cmScripts)
+import PSR.ConfigMap (ResolvedScript (..), ScriptEvaluationParameters (..))
 import PSR.Types
 import PlutusLedgerApi.Common
 import PlutusLedgerApi.V1.EvaluationContext qualified as V1
@@ -57,12 +57,13 @@ data BlockContext era where
 deriving instance Show (BlockContext era)
 
 mkBlockContext ::
+    (HasConfigMap context) =>
     C.ChainPoint ->
     C.ShelleyBasedEra era ->
     [C.Tx era] ->
-    App (BlockContext era)
+    App context err (BlockContext era)
 mkBlockContext prevCp era txs = do
-    conn <- view $ confConfigMap . cmLocalNodeConn
+    conn <- view cmLocalNodeConn
     let query =
             (,)
                 <$> utxoMapQuery era txs
@@ -120,7 +121,7 @@ getNonEmptyIntersection scripts BlockContext{..} tx = do
 makeEvaluationContext ::
     S.CostModels ->
     PlutusLedgerLanguage ->
-    C.ExceptT Text App EvaluationContext
+    C.ExceptT Text (App context err) EvaluationContext
 makeEvaluationContext params lang = case lang of
     PlutusV1 -> run L.PlutusV1 V1.mkEvaluationContext
     PlutusV2 -> run L.PlutusV2 V2.mkEvaluationContext
@@ -131,9 +132,10 @@ makeEvaluationContext params lang = case lang of
         Nothing -> C.throwError $ "Unknown cost model for lang: " <> C.textShow lang
 
 getScriptEvaluationContext ::
+    (HasLoggerEnv context) =>
     BlockContext era ->
     Map C.ScriptHash ResolvedScript ->
-    App (Maybe (Map C.ScriptHash EvaluationContext))
+    App context err (Maybe (Map C.ScriptHash EvaluationContext))
 getScriptEvaluationContext BlockContext{..} relevantScripts = do
     let langs :: Map C.ScriptHash PlutusLedgerLanguage
         langs = Map.mapMaybe (fmap (sepLanguage . fst) . rsScriptForEvaluation) relevantScripts
@@ -145,9 +147,12 @@ getScriptEvaluationContext BlockContext{..} relevantScripts = do
             pure $ Just evalContexts
 
 mkTransactionContext ::
-    BlockContext era -> C.Tx era -> App (Maybe (TransactionContext era))
+    (HasConfigMap context, HasLoggerEnv context) =>
+    BlockContext era ->
+    C.Tx era ->
+    App context err (Maybe (TransactionContext era))
 mkTransactionContext bc tx = do
-    scripts <- view $ confConfigMap . cmScripts
+    scripts <- view cmScripts
     case getNonEmptyIntersection scripts bc tx of
         Nothing -> pure Nothing
         Just nei -> do

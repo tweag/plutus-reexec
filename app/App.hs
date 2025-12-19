@@ -2,11 +2,13 @@
 -- Imports
 --------------------------------------------------------------------------------
 
+import Errors
+import Options
+
 import Cardano.Api qualified as C
 import Control.Concurrent.Async qualified as Async
 import Log (LogLevel (..), Logger, LoggerEnv (..))
 import Log.Backend.StandardOutput (withJsonStdOutLogger)
-import Options
 import Options.Applicative
 import PSR.ConfigMap qualified as CM
 import PSR.HTTP qualified as HTTP
@@ -37,12 +39,13 @@ main = do
     let points = [start]
 
     withJsonStdOutLogger $ \logger -> do
-        let loggerEnv = mkLoggerEnv logger
+        let logEnv = mkLoggerEnv logger
         Storage.withSqliteStorage sqlitePath $ \storage ->
-            Async.withAsync (HTTP.run loggerEnv storage httpServerPort) $ \serverAsync -> do
+            Async.withAsync (HTTP.run logEnv storage httpServerPort) $ \serverAsync -> do
                 Async.link serverAsync
 
-                let appConf = AppConfig loggerEnv config storage
-                runApp appConf $ do
+                let appConf = AppConfig logEnv config storage
+                res <- runApp appConf $ do
                     logAttention_ "Started..."
                     Streaming.mainLoop points
+                either (print @PSRErrors) return res

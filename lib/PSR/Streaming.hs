@@ -16,14 +16,16 @@ import Control.Concurrent (forkIO)
 import Control.Exception (throw)
 import Control.Monad (void)
 import Data.Function ((&))
+import Log (object, (.=))
 import Ouroboros.Network.Protocol.ChainSync.Client (
     ClientStIdle (..),
     ClientStIntersect (..),
     ClientStNext (..),
  )
 import PSR.Chain
-import PSR.ConfigMap qualified as CM
+import PSR.ConfigMap (ResolvedScript (..))
 import PSR.ContextBuilder
+import PSR.Logging (HasLogger, LogSeverity (..), logMsgR, logMsgWithR)
 import PSR.Types
 import Streamly.Data.Fold.Prelude qualified as Fold
 import Streamly.Data.Scanl (Scanl)
@@ -68,7 +70,7 @@ compactPrintOpts =
         , outputOptionsStringStyle = Literal
         }
 
-pCompact :: (Show a) => a -> IO ()
+pCompact :: (Show a, C.MonadIO m) => a -> m ()
 pCompact = pPrintOpt CheckColorTty compactPrintOpts
 
 --------------------------------------------------------------------------------
@@ -159,13 +161,17 @@ streamChainSyncEvents ::
     C.LocalNodeConnectInfo ->
     -- | The points on the chain to start streaming from
     [C.ChainPoint] ->
-    Stream IO ChainSyncEvent
+    Stream (App context err) ChainSyncEvent
 streamChainSyncEvents conn points =
-    Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
+    Stream.morphInner C.liftIO $
+        Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
 
-streamBlocks :: CM.ConfigMap -> [C.ChainPoint] -> Stream IO (C.ChainPoint, Block)
-streamBlocks CM.ConfigMap{..} points =
-    streamChainSyncEvents cmLocalNodeConn points
+streamBlocks ::
+    C.LocalNodeConnectInfo ->
+    [C.ChainPoint] ->
+    Stream (App context err) (C.ChainPoint, Block)
+streamBlocks conn points = do
+    streamChainSyncEvents conn points
         & Stream.filter (not . isByron)
         & fmap getEventBlock
         & Stream.postscanl unshiftFst
@@ -174,27 +180,39 @@ streamBlocks CM.ConfigMap{..} points =
         & Stream.mapMaybe (\(a, b) -> (a,) <$> b)
 
 streamTransactionContext ::
-    CM.ConfigMap -> BlockContext era -> Stream IO (TransactionContext era)
-streamTransactionContext cm ctx1@BlockContext{..} =
+    (HasConfigMap context, HasLogger context) =>
+    BlockContext era ->
+    Stream (App context err) (TransactionContext era)
+streamTransactionContext ctx1@BlockContext{..} =
     Stream.fromList ctxTransactions
-        & Stream.mapMaybeM (mkTransactionContext cm ctx1)
+        & Stream.mapMaybeM (mkTransactionContext ctx1)
         & Stream.trace
             ( \TransactionContext{..} -> do
                 -- pCompact ctx
-                putStrLn "Found scripts:"
-                mapM_ pCompact ctxRelevantScripts
+                logMsgR Debug "Found scripts:"
+                mapM_ printResolvedScript ctxRelevantScripts
             )
+
+printResolvedScript :: (HasLogger context) => ResolvedScript -> App context err ()
+printResolvedScript ResolvedScript{..} =
+    logMsgWithR Debug "Script" $
+        object
+            [ "rsScriptHash" .= rsScriptHash
+            , "rsName" .= rsName
+            , "rsSource" .= rsSource
+            ]
 
 --------------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------------
 
-mainLoop :: CM.ConfigMap -> [C.ChainPoint] -> IO ()
-mainLoop cm@CM.ConfigMap{..} points =
-    streamBlocks cm points
+mainLoop :: (HasConfigMap context, HasLogger context) => [C.ChainPoint] -> App context err ()
+mainLoop points = do
+    conn <- view cmLocalNodeConn
+    streamBlocks conn points
         & Stream.fold (Fold.drainMapM (uncurry consumeBlock))
   where
     consumeBlock previousChainPt (Block era txList) = do
-        ctx1 <- mkBlockContext cmLocalNodeConn previousChainPt era txList
-        streamTransactionContext cm ctx1
+        ctx1 <- mkBlockContext previousChainPt era txList
+        streamTransactionContext ctx1
             & Stream.fold Fold.drain

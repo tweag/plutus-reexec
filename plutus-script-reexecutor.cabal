@@ -55,6 +55,9 @@ library
     PSR.HTTP
     PSR.HTTP.API
     PSR.HTTP.Server
+    PSR.Logging
+    PSR.Logging.Interface
+    PSR.Logging.LogBase
     PSR.Storage.Interface
     PSR.Storage.SQLite
     PSR.Streaming
@@ -71,8 +74,11 @@ library
     , cardano-slotting
     , containers
     , data-default
+    , log-base
     , memory
     , microlens
+    , microlens-platform
+    , mtl
     , ouroboros-consensus
     , ouroboros-consensus-cardano
     , ouroboros-network-protocols
@@ -90,16 +96,21 @@ library
     , text
     , time
     , transformers
+    , unliftio-core
     , wai
+    , wai-log
     , wai-middleware-prometheus
     , warp
     , yaml
 
 executable plutus-script-reexecutor
   import:         lang
-  main-is:        App.hs
-  other-modules:  Options
   hs-source-dirs: app
+  main-is:        App.hs
+  other-modules:
+    Errors
+    Options
+
   build-depends:
     , async
     , base                      >=4.9 && <5
@@ -111,6 +122,7 @@ executable plutus-script-reexecutor
     , pretty-simple
     , streamly
     , streamly-core
+    , text
     , warp
     , yaml
 

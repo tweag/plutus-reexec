@@ -11,6 +11,7 @@ import PSR.HTTP qualified as HTTP
 import PSR.Storage.SQLite qualified as Storage
 import PSR.Events qualified as Events 
 import PSR.Streaming qualified as Streaming
+import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
 
 --------------------------------------------------------------------------------
 -- Main
@@ -18,6 +19,9 @@ import PSR.Streaming qualified as Streaming
 
 main :: IO ()
 main = do
+    hSetBuffering stdout LineBuffering
+    hSetBuffering stderr LineBuffering
+
     Options{..} <- execParser psrOpts
     config@CM.ConfigMap{..} <-
         CM.readConfigMap scriptYaml networkId socketPath >>= either error pure

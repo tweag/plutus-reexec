@@ -33,8 +33,8 @@ common lang
     NamedFieldPuns
     NamedFieldPuns
     NumericUnderscores
-    OverloadedStrings
     OverloadedRecordDot
+    OverloadedStrings
     PolyKinds
     QuasiQuotes
     RecordWildCards
@@ -59,11 +59,11 @@ library
     PSR.HTTP
     PSR.HTTP.API
     PSR.HTTP.Server
+    PSR.HTTP.WebSocket.Events
     PSR.Storage.Interface
     PSR.Storage.SQLite
     PSR.Streaming
     PSR.Types
-    PSR.Websocket.Server
 
   build-depends:
     , aeson
@@ -89,16 +89,16 @@ library
     , servant-queryparam-core
     , servant-queryparam-server
     , servant-server
+    , servant-websockets
     , sqlite-simple
+    , stm
     , streamly
     , streamly-core
-    , stm
     , text
     , time
     , transformers
     , wai
     , wai-middleware-prometheus
-    , wai-websockets
     , warp
     , websockets
     , yaml
@@ -117,9 +117,9 @@ executable plutus-script-reexecutor
     , optparse-applicative
     , plutus-script-reexecutor
     , pretty-simple
+    , stm
     , streamly
     , streamly-core
-    , stm
     , warp
     , yaml
 

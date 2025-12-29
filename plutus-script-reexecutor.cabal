@@ -111,6 +111,7 @@ executable plutus-script-reexecutor
   import:         lang
   main-is:        App.hs
   other-modules:  Options
+  ghc-options:    -rtsopts -Wall -threaded -with-rtsopts=-T -Werror
   hs-source-dirs: app
   build-depends:
     , async

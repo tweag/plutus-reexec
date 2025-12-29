@@ -16,14 +16,12 @@ module PSR.ContextBuilder (
 import Cardano.Api qualified as C
 import Cardano.Api.Ledger qualified as L
 import Cardano.Ledger.Alonzo qualified as Alonzo
-import Cardano.Ledger.Plutus qualified as Plutus
 import Control.Monad (guard)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Text (Text)
 import PSR.Chain
 import PSR.ConfigMap (ConfigMap (..), ResolvedScript (..))
 import PSR.Evaluation.Api (evaluateTransactionExecutionUnitsShelley)

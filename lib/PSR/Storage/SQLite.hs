@@ -142,6 +142,37 @@ mkStorage conn = do
                                 . toField
                             )
                             _eventFilterParam_time_end
+                mkNamedParam q n v = (" (" <> q <> ") " :: Text, n := v)
+                paramsWithQueries =
+                    catMaybes
+                        [ _eventFilterParam_type
+                            <&> mkNamedParam
+                                "(CASE \
+                                \ WHEN :event_type = 'execution' THEN e.block_id \
+                                \ WHEN :event_type = 'cancellation' THEN c.block_id \
+                                \ WHEN :event_type = 'selection' THEN s.block_id \
+                                \ END) IS NOT NULL"
+                                ":event_type"
+                        , _eventFilterParam_name_or_script_hash
+                            <&> mkNamedParam
+                                "e.name = :name_or_hash or e.script_hash = :name_or_hash or c.script_hash = :name_or_hash"
+                                ":name_or_hash"
+                        , _eventFilterParam_slot_begin
+                            <&> mkNamedParam
+                                "b.slot_no >= :slot_begin"
+                                ":slot_begin"
+                        , _eventFilterParam_slot_end
+                            <&> mkNamedParam
+                                "b.slot_no <= :slot_end"
+                                ":slot_end"
+                        , _eventFilterParam_time_begin
+                            <&> mkNamedParam
+                                "e.created_at >= :time_begin or c.created_at >= :time_begin or s.created_at >= :time_begin"
+                                ":time_begin"
+                        , _eventFilterParam_time_end
+                            <&> mkNamedParam
+                                "e.created_at <= :time_end or c.created_at <= :time_end or s.created_at <= :time_end"
+                                ":time_end"
                         ]
 
                 paramsQuery :: Query

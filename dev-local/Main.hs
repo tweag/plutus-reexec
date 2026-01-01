@@ -123,11 +123,23 @@ scripts:
 createConfig :: IO ()
 createConfig = do
     runCmd_ [str|mkdir -p #{env_LOCAL_CONFIG_DIR}|]
-    -- Config for Mint-Spend-Burn Loop
+
+    -- Config for trigger test
     writePlutusScript (env_LOCAL_CONFIG_DIR </> "policy.plutus") Release.tracingPolicy
     writePlutusScript (env_LOCAL_CONFIG_DIR </> "validator.plutus") Release.tracingValidator
     writePlutusScript (env_LOCAL_CONFIG_DIR </> "policy-debug.plutus") Debug.tracingPolicy
     writePlutusScript (env_LOCAL_CONFIG_DIR </> "validator-debug.plutus") Debug.tracingValidator
+
+    buildStakeAddress
+        [ opt "stake-script-file" (env_LOCAL_CONFIG_DIR </> "validator.plutus")
+        , opt "out-file" (env_LOCAL_CONFIG_DIR </> "script.stake.addr")
+        ]
+    genRegCertStakeAddress
+        [ opt "stake-script-file" (env_LOCAL_CONFIG_DIR </> "validator.plutus")
+        , opt "out-file" (env_LOCAL_CONFIG_DIR </> "registration.cert")
+        , opt "key-reg-deposit-amt" (2_000_000 :: Int)
+        ]
+
     -- Config for Escrow
     alice <- mkWallet env_LOCAL_CONFIG_DIR "alice"
     bob <- mkWallet env_LOCAL_CONFIG_DIR "bob"
@@ -182,6 +194,6 @@ main = do
     case cmd of
         StartLocalTestnet -> startLocalTestnet
         Clean -> clean
-        Populate PCMintSpendBurnLoop -> mintSpendBurnLoop
+        Populate PCMintSpendBurnLoop -> testScriptTrigger
         Populate PCEscrow -> escrow
         Setup -> setup

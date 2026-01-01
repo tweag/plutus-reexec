@@ -26,6 +26,7 @@ import Data.FileEmbed (embedStringFile, makeRelativeToProject)
 import Data.Foldable (forM_)
 import Data.Functor ((<&>))
 import Data.Maybe (catMaybes, fromMaybe)
+import Data.Pool (Pool, defaultPoolConfig, newPool, withResource)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Clock (UTCTime)
@@ -38,19 +39,33 @@ import PSR.Events.Interface
 import PSR.Storage.Interface
 import PlutusLedgerApi.Common (Data (..), MajorProtocolVersion (..), PlutusLedgerLanguage (..))
 
-withSqliteStorage :: FilePath -> (Storage -> IO ()) -> IO ()
-withSqliteStorage dbPath act =
-    withConnection dbPath $ \sqliteConn -> do
-        storage <- mkStorage sqliteConn
-        act storage
+pragmas :: [Query]
+pragmas =
+    [ "synchronous = NORMAL"
+    , "journal_mode = WAL"
+    , "locking_mode = NORMAL"
+    ]
 
-mkStorage :: Connection -> IO Storage
-mkStorage conn = do
-    initSchema conn
+openWithPragmas :: FilePath -> IO Connection
+openWithPragmas dbPath = do
+    conn <- open dbPath
+    forM_ pragmas $ \q -> do
+        execute_ conn ("PRAGMA " <> q)
+    pure conn
+
+withSqliteStorage :: FilePath -> (Storage -> IO ()) -> IO ()
+withSqliteStorage dbPath act = do
+    pool <- newPool (defaultPoolConfig (openWithPragmas dbPath) close 120 10)
+    storage <- mkStorage pool
+    act storage
+
+mkStorage :: Pool Connection -> IO Storage
+mkStorage pool = do
+    withResource pool initSchema
     pure $ Storage{..}
   where
-    getOrCreateBlockId :: BlockHeader -> IO Integer
-    getOrCreateBlockId (BlockHeader slotNo hash blockNo) = do
+    getOrCreateBlockId :: Connection -> BlockHeader -> IO Integer
+    getOrCreateBlockId conn (BlockHeader slotNo hash blockNo) = do
         execute
             conn
             "INSERT OR IGNORE INTO block (block_no, slot_no, hash) values (?, ?, ?)"
@@ -61,8 +76,8 @@ mkStorage conn = do
             [Only blockId :: Only Integer] -> return blockId
             _ -> error "Can't find the inserted block"
 
-    getOrCreateCostModelParamsId :: MajorProtocolVersion -> CostModel -> IO Integer
-    getOrCreateCostModelParamsId (MajorProtocolVersion v) costModel = do
+    getOrCreateCostModelParamsId :: Connection -> MajorProtocolVersion -> CostModel -> IO Integer
+    getOrCreateCostModelParamsId conn (MajorProtocolVersion v) costModel = do
         version <- mkVersion64 $ fromIntegral v
         let params = L.serialize version $ encodeCostModel costModel
         execute
@@ -77,7 +92,7 @@ mkStorage conn = do
 
     addExecutionEvent :: ExecutionContextId -> TraceLogs -> Maybe EvalError -> ExUnits -> IO ()
     addExecutionEvent eci logs evalError exUnits =
-        withTransaction conn $ do
+        withResource pool $ \conn -> withTransaction conn $ do
             let
                 ExUnits{exUnitsMem, exUnitsSteps} = exUnits
                 params =
@@ -95,10 +110,10 @@ mkStorage conn = do
                 params
 
     addExecutionContext :: BlockHeader -> ExecutionContext -> IO ExecutionContextId
-    addExecutionContext blockHeader ExecutionContext{..} = do
-        withTransaction conn $ do
-            blockId <- getOrCreateBlockId blockHeader
-            costModelParamsId <- getOrCreateCostModelParamsId majorProtocolVersion costModel
+    addExecutionContext blockHeader ExecutionContext{..} =
+        withResource pool $ \conn -> withTransaction conn $ do
+            blockId <- getOrCreateBlockId conn blockHeader
+            costModelParamsId <- getOrCreateCostModelParamsId conn majorProtocolVersion costModel
             let
                 params =
                     [ ":block_id" := blockId
@@ -128,8 +143,8 @@ mkStorage conn = do
 
     addCancellationEvent :: BlockHeader -> ScriptHash -> IO ()
     addCancellationEvent blockHeader scriptHash =
-        withTransaction conn $ do
-            blockId <- getOrCreateBlockId blockHeader
+        withResource pool $ \conn -> withTransaction conn $ do
+            blockId <- getOrCreateBlockId conn blockHeader
             execute
                 conn
                 "INSERT INTO cancellation_event (block_id, script_hash) values (?, ?)"
@@ -137,8 +152,8 @@ mkStorage conn = do
 
     addSelectionEvent :: BlockHeader -> IO ()
     addSelectionEvent blockHeader =
-        withTransaction conn $ do
-            blockId <- getOrCreateBlockId blockHeader
+        withResource pool $ \conn -> withTransaction conn $ do
+            blockId <- getOrCreateBlockId conn blockHeader
             execute
                 conn
                 "INSERT INTO selection_event (block_id) values (?)"
@@ -146,7 +161,7 @@ mkStorage conn = do
 
     getEvents :: EventFilterParams -> IO [Event]
     getEvents EventFilterParams{..} =
-        withTransaction conn $ do
+        withResource pool $ \conn -> withTransaction conn $ do
             let
                 -- see `docs/specification.md` for default values
                 limitParameter =
@@ -261,7 +276,7 @@ mkStorage conn = do
                             Event{..}
 
 initSchema :: Connection -> IO ()
-initSchema conn = do
+initSchema conn = withTransaction conn $ do
     let schemaQuery = $(embedStringFile =<< makeRelativeToProject "./schema.sql")
     forM_ (T.split (== ';') schemaQuery) $ \q -> do
         execute_ conn (Query q)

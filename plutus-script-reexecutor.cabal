@@ -103,6 +103,7 @@ library
     , stm
     , streamly
     , streamly-core
+    , resource-pool
     , text
     , time
     , transformers

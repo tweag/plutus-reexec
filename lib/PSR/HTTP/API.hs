@@ -7,6 +7,7 @@ module PSR.HTTP.API (
     EventRoutes (..),
     EventsWebSockets (..),
     Event (..),
+    ExecuteParams (..),
     siteApi,
 ) where
 
@@ -80,11 +81,17 @@ data EventsWebSockets route = EventsWebSockets
     }
     deriving (Generic)
 
+data ExecuteParams = ExecuteParams
+    { _ep_contextId :: Integer
+    }
+    deriving (Generic)
+
 data SiteRoutes route = SiteRoutes
     { events ::
         route :- "events" :> NamedRoutes EventRoutes
     , eventsWebSockets ::
         route :- "events-ws" :> NamedRoutes EventsWebSockets
+    , execute :: route :- "execute" :> RecordParam DropPrefixExp ExecuteParams :> Get '[JSON] Event
     }
     deriving (Generic)
 

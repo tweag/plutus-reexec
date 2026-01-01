@@ -29,6 +29,7 @@ server events = siteH
         SiteRoutes
             { events = eventsH
             , eventsWebSockets = eventsWSH
+            , execute = executeH
             }
 
     eventsH :: EventRoutes AsServer
@@ -42,6 +43,10 @@ server events = siteH
 
     eventsHandler filterParams mName =
         liftIO $ events.getEvents (filtersWithName mName filterParams)
+
+    executeH :: ExecuteParams -> Handler Event
+    executeH ExecuteParams{} = do
+        pure undefined
 
     eventsWSH :: EventsWebSockets AsServer
     eventsWSH =

@@ -1,4 +1,4 @@
-module Options where
+module Options (Options (..), Command (..), mkPsrCommands) where
 
 import Cardano.Api
 import Data.Foldable (fold)

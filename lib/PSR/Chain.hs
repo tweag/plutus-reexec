@@ -4,7 +4,6 @@ module PSR.Chain (
     eraHistoryQuery,
     utxoMapQuery,
     pParamsQuery,
-    getTxOutValue,
     mkLocalNodeConnectInfo,
     getPolicySet,
     getTxOutScriptAddr,
@@ -17,7 +16,6 @@ where
 -- Imports
 --------------------------------------------------------------------------------
 
-import Cardano.Api (SocketPath)
 import Cardano.Api qualified as C
 import Cardano.Api.Ledger qualified as L
 import Control.Exception (Exception, throw)
@@ -95,7 +93,7 @@ runLocalStateQueryExpr conn cp query = do
 -- Utils
 --------------------------------------------------------------------------------
 
-mkLocalNodeConnectInfo :: C.NetworkId -> SocketPath -> C.LocalNodeConnectInfo
+mkLocalNodeConnectInfo :: C.NetworkId -> C.SocketPath -> C.LocalNodeConnectInfo
 mkLocalNodeConnectInfo networkId socketPath =
     C.LocalNodeConnectInfo
         { C.localConsensusModeParams =
@@ -119,9 +117,6 @@ getBlock (C.BlockInMode cera blk) = do
 getEventBlock :: ChainSyncEvent -> (C.ChainPoint, Maybe Block)
 getEventBlock (RollForward bim cp) = (C.chainTipToChainPoint cp, getBlock bim)
 getEventBlock (RollBackward cp _) = (cp, Nothing)
-
-getTxOutValue :: C.TxOut ctx era -> C.Value
-getTxOutValue (C.TxOut _ val _ _) = C.txOutValueToValue val
 
 getTxOutScriptAddr :: C.TxOut ctx era -> Maybe C.ScriptHash
 getTxOutScriptAddr

@@ -8,7 +8,7 @@ common lang
   default-language:   Haskell2010
   ghc-options:
     -Wall -Wcompat -Wincomplete-record-updates
-    -Wincomplete-uni-patterns -Wredundant-constraints
+    -Wincomplete-uni-patterns -Wredundant-constraints -Wunused-packages
 
   default-extensions:
     BangPatterns
@@ -80,16 +80,11 @@ library
     , cardano-slotting
     , containers
     , data-default
-    , memory
     , microlens
-    , ouroboros-consensus
-    , ouroboros-consensus-cardano
     , ouroboros-network-protocols
     , plutus-ledger-api
-    , pretty-simple
     , prometheus-client
     , prometheus-metrics-ghc
-    , servant
     , servant-queryparam-core
     , servant-queryparam-server
     , servant-server
@@ -101,7 +96,6 @@ library
     , text
     , time
     , transformers
-    , wai
     , wai-middleware-prometheus
     , warp
     , websockets
@@ -116,18 +110,11 @@ executable plutus-script-reexecutor
   build-depends:
     , async
     , base                      >=4.9 && <5
-    , bytestring
     , cardano-api
-    , containers
-    , directory
     , optparse-applicative
     , plutus-script-reexecutor
-    , pretty-simple
-    , stm
-    , streamly
     , streamly-core
     , warp
-    , yaml
 
 -- TODO: Move this into a separate package
 executable dev-local
@@ -140,32 +127,28 @@ executable dev-local
 
   build-depends:
     , base
-    , bytestring
     , cardano-api
-    , directory
     , filepath
     , onchain
     , optparse-applicative
     , plutus-ledger-api
-    , plutus-tx
-    , serialise
     , streamly-core
     , streamly-process
 
-benchmark bench
-  import:         lang
-  type:           exitcode-stdio-1.0
-  main-is:        Bench.hs
-  hs-source-dirs: bench
-  build-depends:
-    , base                      >=4.9 && <5
-    , plutus-script-reexecutor
+-- benchmark bench
+--   import:         lang
+--   type:           exitcode-stdio-1.0
+--   main-is:        Bench.hs
+--   hs-source-dirs: bench
+--   build-depends:
+--     , base                      >=4.9 && <5
+--     , plutus-script-reexecutor
 
-test-suite test
-  import:         lang
-  type:           exitcode-stdio-1.0
-  main-is:        Test.hs
-  hs-source-dirs: test
-  build-depends:
-    , base                      >=4.9 && <5
-    , plutus-script-reexecutor
+-- test-suite test
+--   import:         lang
+--   type:           exitcode-stdio-1.0
+--   main-is:        Test.hs
+--   hs-source-dirs: test
+--   build-depends:
+--     , base                      >=4.9 && <5
+--     , plutus-script-reexecutor

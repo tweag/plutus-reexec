@@ -130,8 +130,8 @@ subscribeToChainSyncEvents conn points callback =
                     , recvMsgIntersectNotFound = throw NoIntersectionFound
                     }
 
-    actionOnAwait =
-        putStrLn "Waiting..."
+    -- NOTE: We should handle this properly via callback if required.
+    actionOnAwait = pure ()
 
     -- This is required to go to the next block. Essentially forward the
     -- pointer.
@@ -231,15 +231,6 @@ streamTransactionContext ::
 streamTransactionContext cm ctx1@BlockContext{..} =
     Stream.fromList ctxTransactions
         & Stream.mapMaybe (mkTransactionContext cm ctx1)
-
---        & Stream.trace project
---  where
---    projectElem (Right (_, logs, _)) = Right logs
---    projectElem (Left err) = Left err
---
---    projectMap = Map.map projectElem
---
---    project val = projectMap $ ctxTransactionExecutionResult val
 
 --------------------------------------------------------------------------------
 -- Main

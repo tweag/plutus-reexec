@@ -479,6 +479,26 @@ runCertify AppEnv{..} = do
     waitTillExists $ fstOutput txId
     printVar "runCertify.txId" txId
 
+runReward :: AppEnv -> IO ()
+runReward AppEnv{..} = do
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    stakeAddr <- readFile $ env_LOCAL_CONFIG_DIR </> "script.stake.addr"
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "tx-in-collateral" faucetUtxo
+        , opt "change-address" faucetAddr
+        , -- NOTE: +0 is a handy way to trigger the script without involving any
+          -- funds.
+          opt "withdrawal" [str|#{stakeAddr}+0|]
+        , opt "withdrawal-script-file" (env_LOCAL_CONFIG_DIR </> "policy.plutus")
+        , opt "withdrawal-redeemer-value" (9 :: Int)
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    finalizeCurrentTransaction
+    txId <- getTransactionId env_TX_SIGNED
+    waitTillExists $ fstOutput txId
+    printVar "runReward.txId" txId
+
 testScriptTrigger :: IO ()
 testScriptTrigger = do
     appEnv <- makeAppEnv
@@ -488,6 +508,7 @@ testScriptTrigger = do
     runBurn appEnv utxo1
 
     runCertify appEnv
+    runReward appEnv
 
 --------------------------------------------------------------------------------
 -- Escrow

@@ -125,6 +125,21 @@ getCertifyingScriptHashes tx =
     unwrapAndExtract (C.Certificate txCert) =
         C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
 
+getRewardingScriptHashes :: C.Tx era -> Set C.ScriptHash
+getRewardingScriptHashes tx =
+    case C.txWithdrawals (C.getTxBodyContent (C.getTxBody tx)) of
+        C.TxWithdrawalsNone -> Set.empty
+        C.TxWithdrawals _ withdrawals ->
+            Set.fromList $ mapMaybe extractHashFromTuple withdrawals
+  where
+    extractHashFromTuple :: (C.StakeAddress, C.Coin, w) -> Maybe C.ScriptHash
+    extractHashFromTuple (stakeAddr, _, _) =
+        case stakeAddr of
+            C.StakeAddress _ cred ->
+                case cred of
+                    L.ScriptHashObj hash -> Just $ C.fromShelleyScriptHash hash
+                    _ -> Nothing
+
 getNonEmptyIntersection ::
     ConfigMap ->
     BlockContext era ->
@@ -138,6 +153,7 @@ getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
                     [ getMintPolicies tx
                     , getInputScriptAddrs inpUtxoMap tx
                     , getCertifyingScriptHashes tx
+                    , getRewardingScriptHashes tx
                     ]
     guard (not $ Map.null interestingScripts)
     pure interestingScripts

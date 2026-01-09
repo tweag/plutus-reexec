@@ -68,6 +68,10 @@ library
     PSR.Metrics
     PSR.Storage.Interface
     PSR.Storage.SQLite
+    PSR.Storage.SQLite.GetEvents
+    PSR.Storage.SQLite.Instances
+    PSR.Storage.SQLite.Metrics
+    PSR.Storage.SQLite.Utils
     PSR.Streaming
     PSR.Types
 

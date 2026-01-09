@@ -1,17 +1,13 @@
 CREATE TABLE IF NOT EXISTS block (
-  block_id INTEGER PRIMARY KEY,
-
+  hash BLOB PRIMARY KEY,
   block_no UNSIGNED INTEGER NOT NULL,
-  slot_no UNSIGNED INTEGER NOT NULL,
-
-  hash BLOB NOT NULL,
-  UNIQUE (block_no, slot_no, hash)
-);
+  slot_no UNSIGNED INTEGER NOT NULL
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS execution_context (
   context_id INTEGER PRIMARY KEY,
 
-  block_id INTEGER NOT NULL REFERENCES block (block_id),
+  block_hash BLOB NOT NULL REFERENCES block (hash),
   cost_model_params_id INTEGER NOT NULL REFERENCES cost_model_params (params_id),
 
   transaction_hash BLOB NOT NULL,
@@ -29,6 +25,9 @@ CREATE TABLE IF NOT EXISTS execution_context (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_execution_context_block_hash ON execution_context(block_hash);
+CREATE INDEX IF NOT EXISTS idx_execution_context_created_at ON execution_context(created_at ASC);
+
 CREATE TABLE IF NOT EXISTS cost_model_params (
   params_id INTEGER PRIMARY KEY,
   params BLOB NOT NULL,
@@ -36,7 +35,7 @@ CREATE TABLE IF NOT EXISTS cost_model_params (
 );
 
 CREATE TABLE IF NOT EXISTS execution_event (
-  execution_id INTEGER PRIMARY KEY, 
+  event_id INTEGER PRIMARY KEY,
   context_id INTEGER NOT NULL REFERENCES execution_context (context_id),
 
   trace_logs TEXT NOT NULL,
@@ -46,14 +45,22 @@ CREATE TABLE IF NOT EXISTS execution_event (
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_execution_event_created_at ON execution_event(created_at ASC);
 
 CREATE TABLE IF NOT EXISTS cancellation_event (
-  block_id INTEGER NOT NULL REFERENCES block (block_id),
+  event_id INTEGER PRIMARY KEY,
+  block_hash BLOB NOT NULL REFERENCES block (hash),
   script_hash BLOB NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_cancellation_event_block_hash ON cancellation_event(block_hash);
+CREATE INDEX IF NOT EXISTS idx_cancellation_event_created_at ON cancellation_event(created_at ASC);
 
 CREATE TABLE IF NOT EXISTS selection_event (
-  block_id INTEGER NOT NULL REFERENCES block (block_id),
+  event_id INTEGER PRIMARY KEY,
+  block_hash BLOB NOT NULL REFERENCES block (hash),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
+);
+
+CREATE INDEX IF NOT EXISTS idx_selection_event_block_hash ON selection_event(block_hash);
+CREATE INDEX IF NOT EXISTS idx_selection_event_created_at ON selection_event(created_at ASC)

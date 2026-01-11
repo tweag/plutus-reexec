@@ -14,7 +14,7 @@ import Cardano.Api (
     writeFileTextEnvelope,
  )
 import Cardano.Api.Plutus (PlutusScript (..))
-import Onchain.Simple (CompiledCodeLang (..))
+import Onchain.V2.Simple (CompiledCodeLang (..))
 import PlutusLedgerApi.Common (serialiseCompiledCode)
 
 --------------------------------------------------------------------------------

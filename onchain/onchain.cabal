@@ -16,16 +16,15 @@ common plinth-options
     -fobject-code -fno-full-laziness -fno-ignore-interface-pragmas
     -fno-omit-interface-pragmas -fno-spec-constr -fno-specialise
     -fno-strictness -fno-unbox-small-strict-fields
-    -fno-unbox-strict-fields -fplugin-opt
-    PlutusTx.Plugin:target-version=1.0.0
+    -fno-unbox-strict-fields
 
 library
   import:             plinth-options
   exposed-modules:
-    Onchain.Debug
-    Onchain.Escrow
-    Onchain.Release
-    Onchain.Simple
+    Onchain.V2.Debug
+    Onchain.V2.Escrow
+    Onchain.V2.Release
+    Onchain.V2.Simple
 
   hs-source-dirs:     src
   include-dirs:       src

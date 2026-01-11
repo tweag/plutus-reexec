@@ -1,4 +1,4 @@
-module Onchain.Simple where
+module Onchain.V2.Simple where
 
 --------------------------------------------------------------------------------
 -- Imports

@@ -1,4 +1,4 @@
-module Onchain.Escrow where
+module Onchain.V2.Escrow where
 
 --------------------------------------------------------------------------------
 -- Imports

@@ -12,9 +12,9 @@ import Data.Function ((&))
 import Data.String (IsString (..))
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Export (writePlutusScript)
-import Onchain.Debug qualified as Debug
-import Onchain.Escrow (EscrowParams (..))
-import Onchain.Release qualified as Release
+import Onchain.V2.Debug qualified as Debug
+import Onchain.V2.Escrow (EscrowParams (..))
+import Onchain.V2.Release qualified as Release
 import Options.Applicative hiding (str)
 import Populate
 import Streamly.Console.Stdio qualified as Console

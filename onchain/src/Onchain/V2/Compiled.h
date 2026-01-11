@@ -1,6 +1,7 @@
 #ifdef REMOVE_TRACE
 {-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:remove-trace #-}
 #endif
+{-# OPTIONS_GHC -fplugin-opt PlutusTx.Plugin:target-version=1.0.0 #-}
 
 module MODULE_NAME where
 
@@ -8,9 +9,9 @@ module MODULE_NAME where
 -- Imports
 --------------------------------------------------------------------------------
 
-import Onchain.Simple (CompiledCodeLang (..))
-import Onchain.Simple qualified as Simple
-import Onchain.Escrow qualified as Escrow
+import Onchain.V2.Simple (CompiledCodeLang (..))
+import Onchain.V2.Simple qualified as Simple
+import Onchain.V2.Escrow qualified as Escrow
 import PlutusTx
 import PlutusTx.Prelude
 import Cardano.Api
@@ -20,18 +21,18 @@ import PlutusCore.Version (plcVersion100)
 -- Compiled
 --------------------------------------------------------------------------------
 
-type PolicyV2 = BuiltinData -> BuiltinData -> BuiltinUnit
-type ValidatorV2 = BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
-type CompiledCodePolicyV2 = CompiledCodeLang PlutusScriptV2 PolicyV2
-type CompiledCodeValidatorV2 = CompiledCodeLang PlutusScriptV2 ValidatorV2
+type Policy = BuiltinData -> BuiltinData -> BuiltinUnit
+type Validator = BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
+type CompiledCodePolicy = CompiledCodeLang PlutusScriptV2 Policy
+type CompiledCodeValidator = CompiledCodeLang PlutusScriptV2 Validator
 
-tracingPolicy :: CompiledCodePolicyV2
+tracingPolicy :: CompiledCodePolicy
 tracingPolicy = CompiledCodeLang $$(PlutusTx.compile [|| Simple.policy ||])
 
-tracingValidator :: CompiledCodeValidatorV2
+tracingValidator :: CompiledCodeValidator
 tracingValidator = CompiledCodeLang $$(PlutusTx.compile [|| Simple.validator ||])
 
-escrowValidator :: Escrow.EscrowParams -> CompiledCodeValidatorV2
+escrowValidator :: Escrow.EscrowParams -> CompiledCodeValidator
 escrowValidator params =
     CompiledCodeLang
         ($$(PlutusTx.compile [|| Escrow.validatorUntyped ||]) `unsafeApplyCode` liftCode plcVersion100 params)

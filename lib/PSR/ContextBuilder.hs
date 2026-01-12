@@ -33,8 +33,7 @@ import PSR.Evaluation.Api (evaluateTransactionExecutionUnitsShelley)
 import PSR.Metrics (Summary, observeDuration, regSummary)
 import PSR.Types
 
--- NOTE: We should use a more stable module.
-import Cardano.Api.Experimental.Certificate qualified as C
+import Cardano.Api.Certificate qualified as C
 
 --------------------------------------------------------------------------------
 -- Block Context
@@ -45,7 +44,6 @@ proveAlonzoEraOnwards = \case
     C.ShelleyBasedEraAlonzo -> Just C.AlonzoEraOnwardsAlonzo
     C.ShelleyBasedEraBabbage -> Just C.AlonzoEraOnwardsBabbage
     C.ShelleyBasedEraConway -> Just C.AlonzoEraOnwardsConway
-    C.ShelleyBasedEraDijkstra -> Just C.AlonzoEraOnwardsDijkstra
     _ -> Nothing
 
 -- NOTE: Our decisions are made based on the context built. At different stages
@@ -138,10 +136,21 @@ getCertifyingScriptHashes tx =
             Set.fromAscList . mapMaybe unwrapAndExtract . map fst $
                 OMap.toAscList certMap
   where
-    unwrapAndExtract ::
-        C.Certificate (C.ShelleyLedgerEra era) -> Maybe C.ScriptHash
-    unwrapAndExtract (C.Certificate txCert) =
-        C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+    unwrapAndExtract :: C.Certificate era -> Maybe C.ScriptHash
+    unwrapAndExtract cert =
+        case cert of
+            C.ShelleyRelatedCertificate C.ShelleyToBabbageEraShelley txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+            C.ShelleyRelatedCertificate C.ShelleyToBabbageEraAllegra txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+            C.ShelleyRelatedCertificate C.ShelleyToBabbageEraMary txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+            C.ShelleyRelatedCertificate C.ShelleyToBabbageEraAlonzo txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+            C.ShelleyRelatedCertificate C.ShelleyToBabbageEraBabbage txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
+            C.ConwayCertificate C.ConwayEraOnwardsConway txCert ->
+                C.fromShelleyScriptHash <$> L.getScriptWitnessTxCert txCert
 
 getRewardingScriptHashes :: C.Tx era -> Set C.ScriptHash
 getRewardingScriptHashes tx =
@@ -214,7 +223,6 @@ evaluateTransaction BlockContext{..} (C.ShelleyTx era tx) scriptMap = do
         C.AlonzoEraOnwardsAlonzo -> runEvaluation
         C.AlonzoEraOnwardsBabbage -> runEvaluation
         C.AlonzoEraOnwardsConway -> runEvaluation
-        C.AlonzoEraOnwardsDijkstra -> runEvaluation
   where
     runEvaluation ::
         (L.Script (C.ShelleyLedgerEra era) ~ Alonzo.AlonzoScript (C.ShelleyLedgerEra era)) =>

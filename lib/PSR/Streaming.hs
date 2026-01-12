@@ -187,7 +187,6 @@ traceTransactionExecutionResult events tc =
                         SPlutusV1 -> PlutusV1
                         SPlutusV2 -> PlutusV2
                         SPlutusV3 -> PlutusV3
-                        SPlutusV4 -> PlutusV3
                 (scriptContext, datum, redeemer) = extractContextDatumRedeemer args
                 context =
                     ExecutionContext

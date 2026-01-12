@@ -28,7 +28,6 @@ import Cardano.Ledger.Plutus (
     unPlutusV1Args,
     unPlutusV2Args,
     unPlutusV3Args,
-    unPlutusV4Args,
  )
 import Control.Exception (Exception, throw)
 import Data.Functor.Identity (Identity (..))
@@ -166,14 +165,5 @@ extractContextDatumRedeemer args =
                     SpendingScript _ optionalDatum -> toData <$> optionalDatum
                     _ -> Nothing
                 r = Just (toData (scriptContextRedeemer (unPlutusV3Args args)))
-             in
-                (c, d, r)
-        SPlutusV4 ->
-            let
-                c = toData (unPlutusV4Args args)
-                d = case scriptContextScriptInfo (unPlutusV4Args args) of
-                    SpendingScript _ optionalDatum -> toData <$> optionalDatum
-                    _ -> Nothing
-                r = Just (toData (scriptContextRedeemer (unPlutusV4Args args)))
              in
                 (c, d, r)

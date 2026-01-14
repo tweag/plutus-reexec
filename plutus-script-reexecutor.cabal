@@ -141,6 +141,7 @@ executable dev-local
   build-depends:
     , base
     , cardano-api
+    , directory
     , filepath
     , onchain
     , optparse-applicative

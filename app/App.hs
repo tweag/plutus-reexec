@@ -4,10 +4,12 @@
 
 import Cardano.Api qualified as C
 import Control.Concurrent.Async qualified as Async
+import Data.Foldable (for_)
 import Options
 import Options.Applicative (customExecParser, helpLongEquals, prefs, showHelpOnEmpty)
 import PSR.ConfigMap qualified as CM
 import PSR.Events qualified as Events
+import PSR.Events.FileLogger qualified as EventsFileLogger
 import PSR.HTTP qualified as HTTP
 import PSR.Storage.SQLite qualified as Storage
 import PSR.Streaming qualified as Streaming
@@ -38,13 +40,23 @@ run Options{..} = do
     let points = [start]
 
     -- TODO: Use a logging interface instead of using putStrLn.
-    putStrLn "Started..."
+    putStrLn "Starting..."
 
-    Storage.withSqliteStorage sqlitePath $ \storage ->
-        Events.withEvents storage $ \events ->
-            Async.withAsync (HTTP.run config storage events httpServerPort) $ \serverAsync -> do
-                Async.link serverAsync
-                Streaming.mainLoop events config points
+    let
+        withMaybeStorage act = case sqlitePath of
+            Nothing -> do
+                putStrLn "Not using storage."
+                act Nothing
+            Just dbPath -> do
+                putStrLn $ "Using sqlite storage at " <> dbPath
+                Storage.withSqliteStorage dbPath (act . Just)
+
+    withMaybeStorage $ \maybeStorage ->
+        Events.withEvents maybeStorage $ \events -> do
+            let runMainLoop = Streaming.mainLoop events config points
+            let runWebServer = HTTP.run config maybeStorage events httpServerPort
+            let runFileLogger = for_ logsPath (EventsFileLogger.run events)
+            Async.mapConcurrently_ id [runWebServer, runFileLogger, runMainLoop]
 
 generateScriptsExample :: IO ()
 generateScriptsExample = do

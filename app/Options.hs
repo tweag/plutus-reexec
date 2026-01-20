@@ -22,7 +22,8 @@ data Options = Options
     , networkId :: NetworkId
     , scriptYaml :: FilePath
     , httpServerPort :: Port
-    , sqlitePath :: FilePath
+    , logsPath :: Maybe FilePath
+    , sqlitePath :: Maybe FilePath
     }
     deriving (Show, Eq)
 
@@ -36,7 +37,8 @@ mkParseOptions = do
             <*> optNetworkId nodeNetworkId
             <*> optScriptYaml
             <*> optHTTPServerPort
-            <*> optSqlitePath
+            <*> optional optLogsPath
+            <*> optional optSqlitePath
   where
     optSocketPath nodeSocketPath =
         ( File
@@ -81,12 +83,17 @@ mkParseOptions = do
                 <> help "Port of the http server"
                 <> value 8080
             )
+    optLogsPath =
+        strOption
+            ( long "logs-path"
+                <> metavar "LOGS_PATH"
+                <> help "Path to the logs file"
+            )
     optSqlitePath =
         strOption
             ( long "sqlite-path"
                 <> metavar "SQLITE_PATH"
                 <> help "Path to sqlite database"
-                <> value "plutus-script-reexecutor.db"
             )
 
 mkPsrOpts :: IO (ParserInfo Options)

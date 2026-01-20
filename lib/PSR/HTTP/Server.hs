@@ -26,8 +26,8 @@ import Servant
 import Servant.QueryParam.Server.Record ()
 import Servant.Server.Generic (AsServer)
 
-server :: ConfigMap -> Storage -> Events -> Server ServerAPI
-server cm storage events = siteH
+server :: ConfigMap -> Maybe Storage -> Events -> Server ServerAPI
+server cm maybeStorage events = siteH
   where
     siteH :: SiteRoutes AsServer
     siteH =
@@ -46,26 +46,31 @@ server cm storage events = siteH
                 \params -> eventsHandler params . Just
             }
 
-    eventsHandler filterParams mName =
-        liftIO $ events.getEvents (filtersWithName mName filterParams)
+    eventsHandler filterParams mName = case maybeStorage of
+        Nothing -> pure []
+        Just storage -> liftIO $ storage.getEvents (filtersWithName mName filterParams)
 
     executeH :: Text -> ExecuteParams -> Handler [Event]
     executeH nameOrHash ExecuteParams{..} = do
         let filters = ByNameOrHash nameOrHash : catMaybes [ByTxId <$> _ep_tx_id, ByContextId <$> _ep_context_id]
-        contexts <- liftIO $ storage.getExecutionContexts filters
-        executions <-
-            forM contexts $ \(blockHeader, eci, context@ExecutionContext{..}) ->
-                forM (Map.lookup scriptHash cm.cmScripts) $ \rs -> do
-                    (_, exUnits, logs, evalError') <- tryRunScriptInContext rs context
-                    liftIO $
-                        events.addExecutionEvent blockHeader eci $
-                            ExecutionEventPayload
-                                { traceLogs = TraceLogs logs
-                                , exUnits
-                                , evalError = EvalError . C.docToText . C.pretty <$> evalError'
-                                , context
-                                }
-        pure $ catMaybes executions
+
+        case maybeStorage of
+            Nothing -> pure []
+            Just storage -> do
+                contexts <- liftIO $ storage.getExecutionContexts filters
+                executions <-
+                    forM contexts $ \(blockHeader, eci, context@ExecutionContext{..}) ->
+                        forM (Map.lookup scriptHash cm.cmScripts) $ \rs -> do
+                            (_, exUnits, logs, evalError') <- tryRunScriptInContext rs context
+                            liftIO $
+                                events.addExecutionEvent blockHeader eci $
+                                    ExecutionEventPayload
+                                        { traceLogs = TraceLogs logs
+                                        , exUnits
+                                        , evalError = EvalError . C.docToText . C.pretty <$> evalError'
+                                        , context
+                                        }
+                pure $ catMaybes executions
 
     eventsWSH :: EventsWebSockets AsServer
     eventsWSH =
@@ -85,8 +90,8 @@ server cm storage events = siteH
     filtersWithName (Just name) filterParams =
         filterParams{_eventFilterParam_name_or_script_hash = Just name}
 
-run :: ConfigMap -> Storage -> Events -> Warp.Port -> IO ()
-run cm storage events port = do
+run :: ConfigMap -> Maybe Storage -> Events -> Warp.Port -> IO ()
+run cm maybeStorage events port = do
     _ <- register ghcMetrics
-    let mainApp = serve siteApi (server cm storage events)
+    let mainApp = serve siteApi (server cm maybeStorage events)
     Warp.run port (prometheus def mainApp)

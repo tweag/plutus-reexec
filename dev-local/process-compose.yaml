@@ -29,7 +29,7 @@ processes:
     disabled: true
 
   script-reexecutor:
-    command: "cabal run plutus-script-reexecutor -- run --node-socket devnet-env/socket/node1/sock --testnet-magic 42 --script-yaml local-config/scripts.yaml"
+    command: "cabal run plutus-script-reexecutor -- run --node-socket devnet-env/socket/node1/sock --testnet-magic 42 --script-yaml local-config/scripts.yaml --logs-path events.log --sqlite-path plutus-script-reexecutor.db"
     depends_on:
       cardano-testnet:
         condition: process_healthy
@@ -53,6 +53,12 @@ processes:
 
   script-websocket-executions:
     command: "websocat --text ws://localhost:8080/events-ws/?type=execution threadedstdio: | jq -C --unbuffered"
+    depends_on:
+      script-reexecutor:
+        condition: process_healthy
+
+  script-logs-output:
+    command: "tail -f events.log | jq -C --unbuffered"
     depends_on:
       script-reexecutor:
         condition: process_healthy

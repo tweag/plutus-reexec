@@ -2,12 +2,13 @@ module PSR.Events where
 
 import Control.Concurrent.STM.TChan (newBroadcastTChanIO, writeTChan)
 import Control.Monad.STM qualified as STM
+import Data.Foldable (for_)
 import Data.Time (getCurrentTime)
 import PSR.Events.Interface
 import PSR.Storage.Interface (Storage (..))
 
-withEvents :: Storage -> (Events -> IO ()) -> IO ()
-withEvents s act = do
+withEvents :: Maybe Storage -> (Events -> IO ()) -> IO ()
+withEvents maybeStorage act = do
     eventsChannel <- newBroadcastTChanIO
 
     let
@@ -24,7 +25,9 @@ withEvents s act = do
                         , createdAt
                         , payload = CancellationPayload scriptHash
                         }
-            s.addCancellationEvent blockHeader scriptHash
+
+            for_ maybeStorage $ \s ->
+                s.addCancellationEvent blockHeader scriptHash
 
     let
         addSelectionEvent blockHeader = do
@@ -37,15 +40,16 @@ withEvents s act = do
                         , createdAt
                         , payload = SelectionPayload
                         }
-            s.addSelectionEvent blockHeader
-
-    let
-        getEvents = s.getEvents
+            for_ maybeStorage $ \s ->
+                s.addSelectionEvent blockHeader
 
     let
         addExecutionEvent blockHeader executionContextId payload@ExecutionEventPayload{..} = do
             createdAt <- getCurrentTime
-            s.addExecutionEvent executionContextId traceLogs evalError exUnits
+
+            for_ maybeStorage $ \s ->
+                s.addExecutionEvent executionContextId traceLogs evalError exUnits
+
             let event =
                     Event
                         { eventType = Execution
@@ -57,6 +61,8 @@ withEvents s act = do
             pure event
 
     let
-        addExecutionContext = s.addExecutionContext
+        addExecutionContext bh ec = case maybeStorage of
+            Nothing -> pure $ ExecutionContextId 0 -- in case of no storage we return the null id because it will be ignored
+            Just s -> s.addExecutionContext bh ec
 
     act $ Events{..}

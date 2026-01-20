@@ -61,6 +61,7 @@ library
     PSR.Evaluation.Ledger
     PSR.Events
     PSR.Events.Interface
+    PSR.Events.FileLogger
     PSR.HTTP
     PSR.HTTP.API
     PSR.HTTP.Server

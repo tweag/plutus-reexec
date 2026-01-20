@@ -10,3 +10,4 @@ devnet-env
 work
 *.db*
 local-config/
+events.log

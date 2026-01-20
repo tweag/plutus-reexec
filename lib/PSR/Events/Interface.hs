@@ -84,7 +84,6 @@ data Events = Events
     , addCancellationEvent :: BlockHeader -> ScriptHash -> IO ()
     , addSelectionEvent :: BlockHeader -> IO ()
     , getEventsChannel :: TChan Event
-    , getEvents :: EventFilterParams -> IO [Event]
     }
 
 eventMatchesFilter :: EventFilterParams -> Event -> Bool

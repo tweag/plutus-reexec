@@ -35,21 +35,24 @@ mkStorage metrics pool = do
 
     createBlockIfNotExists :: Connection -> BlockHeader -> IO ()
     createBlockIfNotExists conn (BlockHeader slotNo hash blockNo) = do
-        execute
+        sqlInsertLax
             metrics.createBlockIfNotExists_insert
             conn
-            "INSERT OR IGNORE INTO block (block_no, slot_no, hash) values (?, ?, ?)"
-            (blockNo, slotNo, hash)
+            "block"
+            [ col "block_no" blockNo
+            , col "slot_no" slotNo
+            , col "hash" hash
+            ]
 
     getOrCreateCostModelParamsId :: Connection -> MajorProtocolVersion -> CostModel -> IO Integer
     getOrCreateCostModelParamsId conn (MajorProtocolVersion v) costModel = do
         version <- mkVersion64 $ fromIntegral v
         let params = L.serialize version $ encodeCostModel costModel
-        execute
+        sqlInsertLax
             metrics.getOrCreateCostModelParamsId_insert
             conn
-            "INSERT OR IGNORE INTO cost_model_params (params) values (?)"
-            (Only params)
+            "cost_model_params"
+            [col "params" params]
 
         rows <-
             query
@@ -67,18 +70,16 @@ mkStorage metrics pool = do
             let
                 ExUnits{exUnitsMem, exUnitsSteps} = exUnits
                 params =
-                    [ ":context_id" := eci
-                    , ":trace_logs" := logs
-                    , ":eval_error" := evalError
-                    , ":exec_budget_cpu" := toInteger exUnitsSteps
-                    , ":exec_budget_mem" := toInteger exUnitsMem
+                    [ col "context_id" eci
+                    , col "trace_logs" logs
+                    , col "eval_error" evalError
+                    , col "exec_budget_cpu" $ toInteger exUnitsSteps
+                    , col "exec_budget_mem" $ toInteger exUnitsMem
                     ]
-            executeNamed
+            sqlInsert
                 metrics.addExecutionEvent_insert
                 conn
-                "INSERT INTO execution_event \
-                \ (context_id, trace_logs, eval_error, exec_budget_cpu, exec_budget_mem) \
-                \ values (:context_id, :trace_logs, :eval_error, :exec_budget_cpu, :exec_budget_mem)"
+                "execution_event"
                 params
 
     addExecutionContext :: BlockHeader -> ExecutionContext -> IO ExecutionContextId
@@ -89,51 +90,26 @@ mkStorage metrics pool = do
             let
                 ExUnits exBudgetMaxCpu exBudgetMaxMem = exMaxBudget
                 params =
-                    [ ":block_hash" := hash
-                    , ":transaction_hash" := transactionHash
-                    , ":script_hash" := scriptHash
-                    , ":script_name" := scriptName
-                    , ":ledger_language" := ledgerLanguage
-                    , ":major_protocol_version" := majorProtocolVersion
-                    , ":datum" := datum
-                    , ":redeemer" := redeemer
-                    , ":script_context" := scriptContext
-                    , ":exec_budget_max_cpu" := toInteger exBudgetMaxCpu
-                    , ":exec_budget_max_mem" := toInteger exBudgetMaxMem
-                    , ":cost_model_params_id" := costModelParamsId
+                    [ col "block_hash" hash
+                    , col "transaction_hash" transactionHash
+                    , col "script_hash" scriptHash
+                    , col "script_name" scriptName
+                    , col "ledger_language" ledgerLanguage
+                    , col "major_protocol_version" majorProtocolVersion
+                    , col "datum" datum
+                    , col "redeemer" redeemer
+                    , col "script_context" scriptContext
+                    , col "exec_budget_max_cpu" $ toInteger exBudgetMaxCpu
+                    , col "exec_budget_max_mem" $ toInteger exBudgetMaxMem
+                    , col "cost_model_params_id" costModelParamsId
                     ]
             rows <-
-                queryNamed
+                sqlInsertReturning
                     metrics.addExecutionEvent_insert
                     conn
-                    "INSERT INTO execution_context \
-                    \ (block_hash, \
-                    \ transaction_hash, \
-                    \ script_hash, \
-                    \ script_name, \
-                    \ ledger_language, \
-                    \ major_protocol_version, \
-                    \ datum, \
-                    \ redeemer, \
-                    \ script_context, \
-                    \ exec_budget_max_cpu, \
-                    \ exec_budget_max_mem, \
-                    \ cost_model_params_id) \
-                    \ VALUES \
-                    \ (:block_hash, \
-                    \ :transaction_hash, \
-                    \ :script_hash, \
-                    \ :script_name, \
-                    \ :ledger_language, \
-                    \ :major_protocol_version, \
-                    \ :datum, \
-                    \ :redeemer, \
-                    \ :script_context, \
-                    \ :exec_budget_max_cpu, \
-                    \ :exec_budget_max_mem, \
-                    \ :cost_model_params_id) \
-                    \ RETURNING context_id"
+                    "execution_context"
                     params
+                    ["context_id"]
             case rows of
                 [(Only cei) :: Only ExecutionContextId] -> pure cei
                 _ ->
@@ -144,21 +120,26 @@ mkStorage metrics pool = do
     addCancellationEvent blockHeader@(BlockHeader _ hash _) scriptHash =
         withResource pool $ \conn -> withTransaction conn $ do
             void $ createBlockIfNotExists conn blockHeader
-            execute
+            let params =
+                    [ col "block_hash" hash
+                    , col "script_hash" scriptHash
+                    ]
+            sqlInsert
                 metrics.addCancellationEvent_insert
                 conn
-                "INSERT INTO cancellation_event (block_hash, script_hash) values (?, ?)"
-                (hash, scriptHash)
+                "cancellation_event"
+                params
 
     addSelectionEvent :: BlockHeader -> IO ()
     addSelectionEvent blockHeader@(BlockHeader _ hash _) =
         withResource pool $ \conn -> withTransaction conn $ do
             void $ createBlockIfNotExists conn blockHeader
-            execute
+            let params = [col "block_hash" hash]
+            sqlInsert
                 metrics.addSelectionEvent_insert
                 conn
-                "INSERT INTO selection_event (block_hash) values (?)"
-                (Only hash)
+                "selection_event"
+                params
 
     getExecutionContexts :: [FilterBy] -> IO [(BlockHeader, ExecutionContextId, ExecutionContext)]
     getExecutionContexts filters =

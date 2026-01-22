@@ -266,6 +266,7 @@ mainLoop events cm@CM.ConfigMap{..} points = do
 --------------------------------------------------------------------------------
 -- Module metrics
 --------------------------------------------------------------------------------
+
 data StreamingMetrics = StreamingMetrics
     { mainLoop_consumeBlock_runtime :: Summary
     , blocks_since_start :: Counter

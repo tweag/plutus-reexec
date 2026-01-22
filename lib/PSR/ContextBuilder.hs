@@ -35,6 +35,21 @@ import PSR.Metrics (Summary, observeDuration, regSummary)
 import PSR.Types
 
 --------------------------------------------------------------------------------
+-- Metrics
+--------------------------------------------------------------------------------
+
+data ContextBuilderMetrics = ContextBuilderMetrics
+    { mkBlockContext_query :: Summary
+    , mkTransactionContext_runtime :: Summary
+    }
+
+initialiseContextBuilderMetrics :: IO ContextBuilderMetrics
+initialiseContextBuilderMetrics = do
+    mkBlockContext_query <- regSummary "mkBlockContext_query" ""
+    mkTransactionContext_runtime <- regSummary "mkTransactionContext_runtime" ""
+    pure ContextBuilderMetrics{..}
+
+--------------------------------------------------------------------------------
 -- Block Context
 --------------------------------------------------------------------------------
 
@@ -67,17 +82,6 @@ data BlockContext era where
         , ctxSysStart :: C.SystemStart
         } ->
         BlockContext era
-
-data ContextBuilderMetrics = ContextBuilderMetrics
-    { mkBlockContext_query :: Summary
-    , mkTransactionContext_runtime :: Summary
-    }
-
-initialiseContextBuilderMetrics :: IO ContextBuilderMetrics
-initialiseContextBuilderMetrics = do
-    mkBlockContext_query <- regSummary "mkBlockContext_query" ""
-    mkTransactionContext_runtime <- regSummary "mkTransactionContext_runtime" ""
-    pure ContextBuilderMetrics{..}
 
 mkBlockContext ::
     ContextBuilderMetrics ->

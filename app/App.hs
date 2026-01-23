@@ -40,7 +40,7 @@ run Options{..} = do
     let points = [start]
 
     -- TODO: Use a logging interface instead of using putStrLn.
-    putStrLn "Starting..."
+    putStrLn $ "Starting since " <> show points
 
     let
         withMaybeStorage act = case sqlitePath of

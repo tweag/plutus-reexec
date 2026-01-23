@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-process-compose -f ./dev-local/process-compose.yaml -p 3030
+process-compose -f ./dev-local/process-compose.yaml -p 3030 -L process-compose.log

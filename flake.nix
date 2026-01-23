@@ -30,6 +30,7 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     cardano-node.url = "github:tweag/cardano-node/fc02d1ef2126ffe5b62a6eda5a08a52347ebb6ef";
+
   };
 
   outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system: 

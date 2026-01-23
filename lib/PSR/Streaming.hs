@@ -9,7 +9,7 @@ module PSR.Streaming (
 --------------------------------------------------------------------------------
 -- Imports
 --------------------------------------------------------------------------------
-
+import Debug.Trace
 import PSR.Events.Interface (EvalError (..), Events (..), ExecutionContext (..), ExecutionEventPayload (..), TraceLogs (..))
 
 import Cardano.Api qualified as C
@@ -261,13 +261,19 @@ streamTransactionContext cbMetrics cm ctx1@BlockContext{..} =
 
 mainLoop :: Events -> CM.ConfigMap -> [C.ChainPoint] -> IO ()
 mainLoop events cm@CM.ConfigMap{..} points = do
+    forM_ points $ \point -> do
+        res <- runLocalStateQueryExpr cmLocalNodeConn point sysStartQuery
+        traceShowM res
     metrics <- initialiseMetrics
     cbMetrics <- initialiseContextBuilderMetrics
     streamBlocks metrics events cm points
         & Stream.fold (Fold.drainMapM (uncurry (consumeBlock metrics cbMetrics)))
   where
     consumeBlock metrics cbMetrics previousChainPt (Block bh sbe txList) =
-        observeDuration metrics.mainLoop_consumeBlock_runtime $
+        observeDuration metrics.mainLoop_consumeBlock_runtime $ do
+            let quer = sysStartQuery
+            res <- runLocalStateQueryExpr cmLocalNodeConn previousChainPt quer
+            traceShowM res
             case proveAlonzoEraOnwards sbe of
                 Nothing -> pure ()
                 Just era -> do

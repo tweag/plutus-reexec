@@ -11,3 +11,4 @@ work
 *.db*
 local-config/
 events.log
+process-compose.log

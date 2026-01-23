@@ -234,7 +234,10 @@ startLocalTestnet = do
     runCmd
         "cardano-testnet cardano"
         [ opt "num-pool-nodes" env_CARDANO_TESTNET_NUM_NODES
-        , flg "conway-era"
+        , --          opt "node-config" ("devnet-conf/node1/configuration.yaml" :: FilePath)
+          -- , --        , opt "node-config" ("devnet-conf/node2/configuration.yaml" :: FilePath)
+          --       , opt "node-config" ("devnet-conf/node3/configuration.yaml" :: FilePath)
+          flg "conway-era"
         , flg "enable-new-epoch-state-logging"
         , opt "output-dir" env_TESTNET_WORK_DIR
         , opt "testnet-magic" env_CARDANO_TESTNET_MAGIC

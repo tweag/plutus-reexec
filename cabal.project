@@ -1,4 +1,5 @@
 packages: ./., ./onchain/onchain.cabal
+-- , ../cardano-api/cardano-api/
 
 repository cardano-haskell-packages
   url: https://chap.intersectmbo.org/

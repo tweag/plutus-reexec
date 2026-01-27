@@ -4,9 +4,9 @@ A tool that follows a Cardano node, looks for user-specified script hashes and e
 
 ## Motivation 
 
-Developers of a decentralized application (dApp) would ideally have the option to easily analyze the successful executions of their scripts on the Cardano chain, if only to keep some off-chain state synchronized. To reduce load on the network, the fee formula incentivizes script authors to minimize the script’s logic and the size of the state it maintains. Unfortunately, this means state that does not influence the script’s validity judgment but is otherwise useful to the dapp developer (e.g. an individual user’s history of usage, statistics about general usage, etc) is not automatically available on-chain. Dapp developers must use auxiliary tooling in order to maintain that state off-chain.
+Developers of a decentralized application (dApp) would ideally have the option to easily analyze the successful executions of their scripts on the Cardano chain. To reduce load on the network, the fee formula incentivizes script authors to minimize the script’s logic and the size of the state it maintains. Unfortunately, this means state that does not influence the script’s validity judgment but is otherwise useful to the dapp developer (e.g. an individual user’s history of usage, statistics about general usage, etc) is not automatically available on-chain. Dapp developers must use auxiliary tooling in order to maintain that state off-chain.
 
-Plutus Script Re-Executor (PSR) is a monitoring tool designed to allow developers to run tracing enabled versions of Plutus scripts on real transactions from the Cardano blockchain locally without paying extra fees. It does this by connecting to a cardano-node to monitor for new blocks, and then when transactions using matched scripts are found, it will substitute one (or more) scripts the user has provided in place of the real script. This means users can use unoptimised scripts with tracing enabled to see intermediate values, or test alternative implementations against known buggy transactions to ensure bug have been fixed.
+Plutus Script Re-Executor (PSR) is a monitoring tool designed to allow developers to run alternative Plutus scripts - for example, with tracing enabled - on real transactions from the Cardano blockchain locally, without paying extra fees. It does this by connecting to a cardano-node to monitor new blocks, and then when transactions using specified scripts are found, it will substitute one (or more) user provided scripts in place of the real script. This means users can use unoptimised scripts with tracing enabled to see intermediate values, or test alternative implementations against known buggy transactions to ensure bug have been fixed.
 
 PSR also provides an option to store all data needed to re-execute transactions of interest from the past against new scripts, allowing developers to iterate application development and then go back and test after the fact.
 
@@ -60,9 +60,10 @@ By default, there is no logging or any recording to storage. If you want to writ
 
 ```bash
 tail -f events.log
-```
+# Or, if you have jq installed
+tail -f events.log | jq
 
-or enable SQLite storage with `--sqlite-path plutus-script-reexecutor.db` which will enable API endpoints to explore the data 
+or enable SQLite storage with `--sqlite-path plutus-script-reexecutor.db` which will enable API endpoints to explore historical data.
 
 ```bash
 curl -v http://localhost:8080/events | jq

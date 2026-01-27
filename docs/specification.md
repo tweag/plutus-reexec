@@ -128,7 +128,7 @@ More here https://plutus.cardano.intersectmbo.org/docs/glossary
 
 #### 4. Events API
 
-**Purpose**: provides access to the results of the scripts re-executing. Note, that `GET` endpoints provide data only if the SQLite database is enabled. By default, only the WebSocket endpoints streams the data in real time.
+**Purpose**: provides access to the results of the scripts re-executing. Note, that `GET` endpoints provide data only if the SQLite database is enabled. Only the WebSocket endpoints streams the data in real time.
 
 **Architecture**: HTTP API that queries data from the data storage and returns JSON responses. Also provides OpenAPI spec. 
 
@@ -219,7 +219,7 @@ Prometheus metrics endpoint exposing operational statistics in standard expositi
 
 #### 6. Leash Node-to-Client Protocol
 
-**Purpose**: a Node-to-Client protocol that allows to "leash" the node and keep the resource usage under control.
+**Purpose**: a Node-to-Client protocol that allows to "leash" the node and keep the resource usage under control by preventing its internal ledger advancing too quickly.
 
 If the re-executor is too slow to process the events, it can "leash" the node to pause the block processing, slowing down and allowing for the re-executor to catch up.
 
@@ -324,7 +324,7 @@ msgAcquire   = [0, base.point]
 
 The step (5) should introduce the relevant changes to the `cardano-node`.
 
-We want to stop the node to communicate and get new blocks. We list the potential implementation strategies that we considered.
+We want to stop the node from extending its chosen chain while the plutus-script-reexecutor is executing substitute scripts, so that the ledger state can be queried. We list the potential implementation strategies that we considered.
 
 **Strategy 1**:
 
@@ -398,11 +398,11 @@ where `my_custom_script.json`:
 
 #### 8. Data Storage
 
-**Purpuse**: storage of the emitted events for Events API and future analysis. 
+**Purpose**: storage of the emitted events for Events API and future analysis. 
 
-**Motivation**: we want to provide an option to store the results of the scripts execution for future analysis. We provide two options: an unstructured logging to a file and a structured storage using SQLite database with entities described below.
+**Motivation**: we want to provide an option to store the results of the scripts execution for future analysis. We provide two options: an unstructured logging to a file and a structured storage using a SQLite database with the entities described below.
 
-**Eviction policies**: at the moment we delegate the storage control to user. We can provide later different policies how long the data should be stored (`h` hours, `d` days, etc).
+**Eviction policies**: at the moment no eviction is performed by the system, but can be written manually by the user. In the future we may provide mechanisms for automatically evicting previous events (`h` hours, `d` days, etc).
 
 **Entities**:
 

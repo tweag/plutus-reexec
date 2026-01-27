@@ -9,12 +9,15 @@ module PSR.ConfigMap (
 import Cardano.Api qualified as C
 import Cardano.Api.Shelley qualified as C
 import Control.Applicative (asum)
+import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Except (ExceptT (..), except, runExceptT, throwE, withExceptT)
 import Data.Aeson.Types (FromJSON (..), ToJSON (..))
+import Data.Function ((&))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Yaml (decodeFileEither, withObject)
 import Data.Yaml.Aeson (Value (Object), object, (.:), (.:?), (.=))
 import PSR.Chain (mkLocalNodeConnectInfo)
@@ -31,7 +34,7 @@ import System.FilePath (dropFileName, (</>))
 -- | Represents the config map file on disk
 data ConfigMapFile = ConfigMapFile
     { cmfStart :: Maybe C.ChainPoint
-    , cmfScripts :: [ScriptDetails]
+    , cmfScripts :: [ScriptSubDetails]
     }
     deriving (Show, Eq)
 
@@ -46,28 +49,49 @@ instance ToJSON ConfigMapFile where
         object ["start" .= strt, "scripts" .= scrpts]
 
 -- | Details of each script
-data ScriptDetails = ScriptDetails
+data ScriptSubDetails = ScriptSubDetails
     { sdScriptHash :: C.ScriptHash
-    , sdName :: Maybe Text
-    , sdSource :: Maybe ScriptSource
+    , sdScriptSubs :: [ScriptDetails]
     }
     deriving (Show, Eq)
 
+instance ToJSON ScriptSubDetails where
+    toJSON (ScriptSubDetails sh subs) =
+        object
+            [ "script_hash" .= sh
+            , "substitutions" .= subs
+            ]
+
+instance FromJSON ScriptSubDetails where
+    parseJSON = withObject "ScriptSubDetails" $ \v ->
+        ScriptSubDetails
+            <$> v .: "script_hash"
+            <*> v .: "substitutions"
+
 instance ToJSON ScriptDetails where
-    toJSON (ScriptDetails sh nm src) =
+    toJSON (ScriptDetails hash src nm) =
         object $
             concat
-                [ ["script_hash" .= sh]
-                , maybe [] ((: []) . ("name" .=)) nm
-                , maybe [] ((: []) . ("source" .=)) src
+                [ maybe [] ((: []) . ("name" .=)) nm
+                ,
+                    [ "source" .= src
+                    , "hash" .= hash
+                    ]
                 ]
 
 instance FromJSON ScriptDetails where
     parseJSON = withObject "ScriptDetails" $ \v ->
         ScriptDetails
-            <$> v .: "script_hash"
+            <$> v .: "hash"
+            <*> v .: "source"
             <*> v .:? "name"
-            <*> v .:? "source"
+
+data ScriptDetails = ScriptDetails
+    { sdHash :: Text
+    , sdSource :: ScriptSource
+    , sdName :: Maybe Text
+    }
+    deriving (Show, Eq)
 
 {- | Where a script's source can be found, either inline in the Yaml file
  or another file on disk.
@@ -98,8 +122,8 @@ data ConfigMap = ConfigMap
 
 -- | Information relating to a loaded script
 data ResolvedScript = ResolvedScript
-    { rsScriptHash :: C.ScriptHash
-    , rsName :: Maybe Text
+    { rsName :: Maybe Text
+    , rsScriptHash :: Text
     , rsScriptFileContent :: C.ScriptInAnyLang
     , rsScriptEvaluationParameters :: ScriptEvaluationParameters
     , rsScriptForEvaluation :: ScriptForEvaluation
@@ -130,31 +154,60 @@ resolveScript (scr :: C.ScriptInAnyLang) = do
     (ScriptEvaluationParameters lang protocol,)
         <$> withExceptT show (deserialiseScript lang protocol script)
 
+readSubstitutionList :: FilePath -> ScriptSubDetails -> ExceptT String IO (C.ScriptHash, [ResolvedScript])
+readSubstitutionList scriptYamlDir ScriptSubDetails{..} = do
+    (sdScriptHash,) <$> mapM (readScriptFile scriptYamlDir sdScriptHash) (zip [1 ..] sdScriptSubs)
+
 -- | Resolve a script, either from disk or inline definition
-readScriptFile :: FilePath -> ScriptDetails -> ExceptT String IO ResolvedScript
-readScriptFile scriptYamlDir ScriptDetails{..} = do
+readScriptFile :: FilePath -> C.ScriptHash -> (Int, ScriptDetails) -> ExceptT String IO ResolvedScript
+readScriptFile scriptYamlDir scrutScriptHash (ix, ScriptDetails{..}) = do
     let someTypeFor x v = C.FromSomeType x (C.ScriptInAnyLang (C.PlutusScriptLanguage v) . C.PlutusScript v)
         v1 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV1) C.PlutusScriptV1
         v2 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV2) C.PlutusScriptV2
         v3 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV3) C.PlutusScriptV3
         scriptTypes = [v1, v2, v3]
 
+    let errIdentifier =
+            Text.concat
+                [ "["
+                , C.serialiseToRawBytesHexText scrutScriptHash
+                , "] at substitution ["
+                , Text.pack (show ix)
+                , "]"
+                ]
+
     rsScriptFileContent <- case sdSource of
-        Just (FromFile path') -> do
+        FromFile path' -> do
             let path = scriptYamlDir </> path'
             relativePath <- liftIO $ makeRelativeToCurrentDirectory path
             liftIO $ putStrLn $ "Reading script from file: " <> relativePath
             withExceptT show $ ExceptT $ C.readFileTextEnvelopeAnyOf scriptTypes (C.File relativePath)
-        Just (CBORHex content) ->
+        CBORHex content ->
             withExceptT show $ except $ C.deserialiseFromTextEnvelopeAnyOf scriptTypes content
-        _ -> fail $ "Please provide either the cborHex or file_path for: " <> show sdScriptHash
+
+    let actualScriptHash =
+            case rsScriptFileContent of
+                C.ScriptInAnyLang _ script ->
+                    C.serialiseToRawBytesHexText $ C.hashScript script
+
+    when (sdHash /= actualScriptHash) $
+        fail $
+            Text.unpack $
+                Text.concat
+                    [ "Unable to verify script file at "
+                    , errIdentifier
+                    , ". Actual hash is: "
+                    , actualScriptHash
+                    , ", but got "
+                    , sdHash
+                    ]
 
     (rsScriptEvaluationParameters, rsScriptForEvaluation) <- resolveScript rsScriptFileContent
 
     pure
         ResolvedScript
-            { rsScriptHash = sdScriptHash
-            , rsName = sdName
+            { rsName = sdName
+            , rsScriptHash = sdHash
             , rsScriptFileContent
             , rsScriptEvaluationParameters
             , rsScriptForEvaluation
@@ -165,10 +218,19 @@ readConfigMap :: FilePath -> C.NetworkId -> C.SocketPath -> IO (Either String Co
 readConfigMap scriptYaml networkId socketPath = runExceptT $ do
     ConfigMapFile{..} <- withExceptT show $ ExceptT $ decodeFileEither scriptYaml
     let scriptYamlDir = dropFileName scriptYaml
-    scripts' <- mapM (readScriptFile scriptYamlDir) cmfScripts
+    -- NOTE: The list of substitutions here can be empty, it just signals that
+    -- the user is interested in that script and wants to record the
+    -- observations.
+    --
+    -- TODO: Think about what should the behavior look like if the list of
+    -- substitutions is empty.
+    -- One possible behavior: Evaluate the transaction normally in this case,
+    -- and provide the outputs we compute from the real script (like ExUnits).
+    --
+    kvPairs <- mapM (readSubstitutionList scriptYamlDir) cmfScripts
     pure
         ConfigMap
             { cmStart = cmfStart
-            , cmScripts = Map.fromListWith (++) [(rsScriptHash x, [x]) | x <- scripts']
+            , cmScripts = Map.fromList kvPairs
             , cmLocalNodeConn = mkLocalNodeConnectInfo networkId socketPath
             }

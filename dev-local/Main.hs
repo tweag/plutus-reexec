@@ -107,29 +107,46 @@ tracingYamlContents scriptsDirName = do
 
     policyPolicyId <- getPolicyId $ scriptsDirPath </> "policy.plutus"
     validatorPolicyId <- getPolicyId $ scriptsDirPath </> "validator.plutus"
+    policyDebugPolicyId <- getPolicyId $ scriptsDirPath </> "policy-debug.plutus"
+    validatorDebugPolicyId <- getPolicyId $ scriptsDirPath </> "validator-debug.plutus"
 
+    -- NOTE: This seems hacky but I can't think of a clean way to abstract
+    -- common functionality.
+    let validatorPrefix =
+            if policyPolicyId == validatorPolicyId
+                then ""
+                else
+                    [str|
+  - script_hash: "#{validatorPolicyId}"
+    substitutions:
+|]
     pure
         [str|
   - script_hash: "#{policyPolicyId}"
-    name: "Local Policy"
-    source:
-      path: "#{scriptsDirName}/policy-debug.plutus"
-
-  - script_hash: "#{validatorPolicyId}"
-    name: "Local Validator"
-    source:
-      path: "#{scriptsDirName}/validator-debug.plutus"
+    substitutions:
+      - name: "Local Policy"
+        hash: "#{policyDebugPolicyId}"
+        source:
+          path: "#{scriptsDirName}/policy-debug.plutus"
+#{validatorPrefix}
+      - name: "Local Validator"
+        hash: "#{validatorDebugPolicyId}"
+        source:
+          path: "#{scriptsDirName}/validator-debug.plutus"
 |]
 
 escrowYamlContents :: IO String
 escrowYamlContents = do
     escrowPolicyId <- getPolicyId $ env_LOCAL_CONFIG_DIR </> "escrow.plutus"
+    escrowDebugPolicyId <- getPolicyId $ env_LOCAL_CONFIG_DIR </> "escrow-debug.plutus"
     pure
         [str|
   - script_hash: "#{escrowPolicyId}"
-    name: "Escrow"
-    source:
-      path: "./escrow-debug.plutus"
+    substitutions:
+      - name: "Escrow"
+        hash: "#{escrowDebugPolicyId}"
+        source:
+          path: "./escrow-debug.plutus"
 |]
 
 createScriptsYaml :: IO ()

@@ -12,6 +12,7 @@ import Control.Applicative (asum)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Except (ExceptT (..), except, runExceptT, throwE, withExceptT)
 import Data.Aeson.Types (FromJSON (..), ToJSON (..))
+import Data.Function ((&))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -186,7 +187,10 @@ readScriptFile scrutScriptHash (ix, ScriptDetails{..}) = do
 readConfigMap :: FilePath -> C.NetworkId -> C.SocketPath -> IO (Either String ConfigMap)
 readConfigMap scriptYaml networkId socketPath = runExceptT $ do
     ConfigMapFile{..} <- withExceptT show $ ExceptT $ decodeFileEither scriptYaml
-    kvPairs <- mapM readSubstitutionList cmfScripts
+    -- TODO: Warn users if the substitution list is null
+    kvPairs <-
+        mapM readSubstitutionList cmfScripts
+            & fmap (filter (not . null . snd))
     pure
         ConfigMap
             { cmStart = cmfStart

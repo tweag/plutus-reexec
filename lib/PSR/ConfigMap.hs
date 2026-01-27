@@ -12,6 +12,7 @@ import Control.Applicative (asum)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Except (ExceptT (..), except, runExceptT, throwE, withExceptT)
 import Data.Aeson.Types (FromJSON (..), ToJSON (..))
+import Data.Function ((&))
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -29,7 +30,7 @@ import PlutusLedgerApi.Common (
 -- | Represents the config map file on disk
 data ConfigMapFile = ConfigMapFile
     { cmfStart :: Maybe C.ChainPoint
-    , cmfScripts :: [ScriptDetails]
+    , cmfScripts :: [ScriptSubDetails]
     }
     deriving (Show, Eq)
 
@@ -44,28 +45,44 @@ instance ToJSON ConfigMapFile where
         object ["start" .= strt, "scripts" .= scrpts]
 
 -- | Details of each script
-data ScriptDetails = ScriptDetails
+data ScriptSubDetails = ScriptSubDetails
     { sdScriptHash :: C.ScriptHash
-    , sdName :: Maybe Text
-    , sdSource :: Maybe ScriptSource
+    , sdScriptSubs :: [ScriptDetails]
     }
     deriving (Show, Eq)
 
+instance ToJSON ScriptSubDetails where
+    toJSON (ScriptSubDetails sh subs) =
+        object
+            [ "script_hash" .= sh
+            , "substitutions" .= subs
+            ]
+
+instance FromJSON ScriptSubDetails where
+    parseJSON = withObject "ScriptSubDetails" $ \v ->
+        ScriptSubDetails
+            <$> v .: "script_hash"
+            <*> v .: "substitutions"
+
 instance ToJSON ScriptDetails where
-    toJSON (ScriptDetails sh nm src) =
+    toJSON (ScriptDetails nm src) =
         object $
             concat
-                [ ["script_hash" .= sh]
-                , maybe [] ((: []) . ("name" .=)) nm
+                [ maybe [] ((: []) . ("name" .=)) nm
                 , maybe [] ((: []) . ("source" .=)) src
                 ]
 
 instance FromJSON ScriptDetails where
     parseJSON = withObject "ScriptDetails" $ \v ->
         ScriptDetails
-            <$> v .: "script_hash"
-            <*> v .:? "name"
+            <$> v .:? "name"
             <*> v .:? "source"
+
+data ScriptDetails = ScriptDetails
+    { sdName :: Maybe Text
+    , sdSource :: Maybe ScriptSource
+    }
+    deriving (Show, Eq)
 
 {- | Where a script's source can be found, either inline in the Yaml file
  or another file on disk.
@@ -96,8 +113,7 @@ data ConfigMap = ConfigMap
 
 -- | Information relating to a loaded script
 data ResolvedScript = ResolvedScript
-    { rsScriptHash :: C.ScriptHash
-    , rsName :: Maybe Text
+    { rsName :: Text
     , rsScriptFileContent :: C.ScriptInAnyLang
     , rsScriptEvaluationParameters :: ScriptEvaluationParameters
     , rsScriptForEvaluation :: ScriptForEvaluation
@@ -128,14 +144,26 @@ resolveScript (scr :: C.ScriptInAnyLang) = do
     (ScriptEvaluationParameters lang protocol,)
         <$> withExceptT show (deserialiseScript lang protocol script)
 
+readSubstitutionList :: ScriptSubDetails -> ExceptT String IO (C.ScriptHash, [ResolvedScript])
+readSubstitutionList ScriptSubDetails{..} = do
+    (sdScriptHash,) <$> mapM (readScriptFile sdScriptHash) (zip [1 ..] sdScriptSubs)
+
 -- | Resolve a script, either from disk or inline definition
-readScriptFile :: ScriptDetails -> ExceptT String IO ResolvedScript
-readScriptFile ScriptDetails{..} = do
+readScriptFile :: C.ScriptHash -> (Int, ScriptDetails) -> ExceptT String IO ResolvedScript
+readScriptFile scrutScriptHash (ix, ScriptDetails{..}) = do
     let someTypeFor x v = C.FromSomeType x (C.ScriptInAnyLang (C.PlutusScriptLanguage v) . C.PlutusScript v)
         v1 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV1) C.PlutusScriptV1
         v2 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV2) C.PlutusScriptV2
         v3 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV3) C.PlutusScriptV3
         scriptTypes = [v1, v2, v3]
+
+    let errIdentifier =
+            "[" <> show scrutScriptHash <> "] at substitution [" <> show ix <> "]"
+
+    rsName <-
+        case sdName of
+            Just val -> pure val
+            Nothing -> fail $ "Please provide the script name for: " <> errIdentifier
 
     rsScriptFileContent <- case sdSource of
         Just (FromFile path) -> do
@@ -143,14 +171,13 @@ readScriptFile ScriptDetails{..} = do
             withExceptT show $ ExceptT $ C.readFileTextEnvelopeAnyOf scriptTypes (C.File path)
         Just (CBORHex content) ->
             withExceptT show $ except $ C.deserialiseFromTextEnvelopeAnyOf scriptTypes content
-        _ -> fail $ "Please provide either the cborHex or file_path for: " <> show sdScriptHash
+        _ -> fail $ "Please provide either the cborHex or file_path for: " <> errIdentifier
 
     (rsScriptEvaluationParameters, rsScriptForEvaluation) <- resolveScript rsScriptFileContent
 
     pure
         ResolvedScript
-            { rsScriptHash = sdScriptHash
-            , rsName = sdName
+            { rsName
             , rsScriptFileContent
             , rsScriptEvaluationParameters
             , rsScriptForEvaluation
@@ -160,10 +187,13 @@ readScriptFile ScriptDetails{..} = do
 readConfigMap :: FilePath -> C.NetworkId -> C.SocketPath -> IO (Either String ConfigMap)
 readConfigMap scriptYaml networkId socketPath = runExceptT $ do
     ConfigMapFile{..} <- withExceptT show $ ExceptT $ decodeFileEither scriptYaml
-    scripts' <- mapM readScriptFile cmfScripts
+    -- TODO: Warn users if the substitution list is null
+    kvPairs <-
+        mapM readSubstitutionList cmfScripts
+            & fmap (filter (not . null . snd))
     pure
         ConfigMap
             { cmStart = cmfStart
-            , cmScripts = Map.fromListWith (++) [(rsScriptHash x, [x]) | x <- scripts']
+            , cmScripts = Map.fromList kvPairs
             , cmLocalNodeConn = mkLocalNodeConnectInfo networkId socketPath
             }

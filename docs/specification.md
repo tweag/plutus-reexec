@@ -101,6 +101,7 @@ The dApp developer will run the Plutus Script Re-Executor (PSR) that connects to
 - `ScriptContext` — An input to a Plutus script created by the ledger. It includes details of the transaction being validated. Additionally, since a transaction may do multiple things, each of which needs to be validated by a separate script, the script context also specifies what exactly the current script is responsible for validating. 
 - `PlutusCore` — a low-level language for on-chain code, based on untyped lambda calculus.
 - `Mini-protocol` — a mini protocol is a well-defined and modular building block of the network protocol. Structuring a protocol around mini-protocols helps manage the overall complexity of the design and adds useful flexibility.
+- `Leashing` — by "leashing" we mean setting the point`leashing_point` in the node such that the node won't process blocks after `leashing_point + k`.
 
 More here https://plutus.cardano.intersectmbo.org/docs/glossary
 

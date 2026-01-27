@@ -136,7 +136,7 @@ evalTxExUnitsWithLogs ssi pp tx utxo epochInfo systemStart = Map.mapWithKey find
                 Just vals ->
                     pure . flip map vals $ \val ->
                         case val of
-                            (sname, Conway.PlutusScript s) -> (sname, s)
+                            (sname, Conway.PlutusScript s) -> (Just sname, s)
                             _ -> error "Conway.TimelockScript is not supported."
         pure $ map (second (findAndCountWith purpHash rdmr)) scriptsToRun
 

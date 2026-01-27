@@ -97,7 +97,7 @@ data ConfigMap = ConfigMap
 -- | Information relating to a loaded script
 data ResolvedScript = ResolvedScript
     { rsScriptHash :: C.ScriptHash
-    , rsName :: Maybe Text
+    , rsName :: Text
     , rsScriptFileContent :: C.ScriptInAnyLang
     , rsScriptEvaluationParameters :: ScriptEvaluationParameters
     , rsScriptForEvaluation :: ScriptForEvaluation
@@ -137,6 +137,11 @@ readScriptFile ScriptDetails{..} = do
         v3 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV3) C.PlutusScriptV3
         scriptTypes = [v1, v2, v3]
 
+    rsName <-
+        case sdName of
+            Just val -> pure val
+            Nothing -> fail $ "Please provide the script name for: " <> show sdScriptHash
+
     rsScriptFileContent <- case sdSource of
         Just (FromFile path) -> do
             liftIO $ putStrLn $ "Reading script from file: " <> path
@@ -150,7 +155,7 @@ readScriptFile ScriptDetails{..} = do
     pure
         ResolvedScript
             { rsScriptHash = sdScriptHash
-            , rsName = sdName
+            , rsName
             , rsScriptFileContent
             , rsScriptEvaluationParameters
             , rsScriptForEvaluation

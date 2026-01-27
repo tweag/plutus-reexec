@@ -145,21 +145,24 @@ resolveScript (scr :: C.ScriptInAnyLang) = do
 
 readSubstitutionList :: ScriptSubDetails -> ExceptT String IO (C.ScriptHash, [ResolvedScript])
 readSubstitutionList ScriptSubDetails{..} = do
-    (sdScriptHash,) <$> mapM (readScriptFile sdScriptHash) sdScriptSubs
+    (sdScriptHash,) <$> mapM (readScriptFile sdScriptHash) (zip [1 ..] sdScriptSubs)
 
 -- | Resolve a script, either from disk or inline definition
-readScriptFile :: C.ScriptHash -> ScriptDetails -> ExceptT String IO ResolvedScript
-readScriptFile scrutScriptHash ScriptDetails{..} = do
+readScriptFile :: C.ScriptHash -> (Int, ScriptDetails) -> ExceptT String IO ResolvedScript
+readScriptFile scrutScriptHash (ix, ScriptDetails{..}) = do
     let someTypeFor x v = C.FromSomeType x (C.ScriptInAnyLang (C.PlutusScriptLanguage v) . C.PlutusScript v)
         v1 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV1) C.PlutusScriptV1
         v2 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV2) C.PlutusScriptV2
         v3 = someTypeFor (C.AsPlutusScript C.AsPlutusScriptV3) C.PlutusScriptV3
         scriptTypes = [v1, v2, v3]
 
+    let errIdentifier =
+            "[" <> show scrutScriptHash <> "] at substitution [" <> show ix <> "]"
+
     rsName <-
         case sdName of
             Just val -> pure val
-            Nothing -> fail $ "Please provide the script name for: " <> show scrutScriptHash
+            Nothing -> fail $ "Please provide the script name for: " <> errIdentifier
 
     rsScriptFileContent <- case sdSource of
         Just (FromFile path) -> do
@@ -167,7 +170,7 @@ readScriptFile scrutScriptHash ScriptDetails{..} = do
             withExceptT show $ ExceptT $ C.readFileTextEnvelopeAnyOf scriptTypes (C.File path)
         Just (CBORHex content) ->
             withExceptT show $ except $ C.deserialiseFromTextEnvelopeAnyOf scriptTypes content
-        _ -> fail $ "Please provide either the cborHex or file_path for: " <> show scrutScriptHash
+        _ -> fail $ "Please provide either the cborHex or file_path for: " <> errIdentifier
 
     (rsScriptEvaluationParameters, rsScriptForEvaluation) <- resolveScript rsScriptFileContent
 

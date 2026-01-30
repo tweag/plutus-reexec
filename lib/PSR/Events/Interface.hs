@@ -40,6 +40,9 @@ data Event = Event
 
 newtype TraceLogs = TraceLogs {getTraceLogs :: [Text]} deriving (Eq, Show, Generic)
 
+-- TODO: scriptHash is currently the targetScriptHash. We need to also track
+-- substitutedScriptHash here which is essentially the canonical scriptName.
+--
 data ExecutionContext = ExecutionContext
     { transactionHash :: TxId
     , scriptName :: Maybe Text

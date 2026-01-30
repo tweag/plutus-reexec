@@ -1,3 +1,7 @@
+{- FOURMOLU_DISABLE -}
+
+{-# LANGUAGE RankNTypes #-}
+
 -- NOTE: The contents of this module are originally copied from
 -- Cardano.Ledger.Alonzo.Plutus.Evaluate
 
@@ -7,17 +11,19 @@ module PSR.Evaluation.Ledger (evalTxExUnitsWithLogs, evalPwcExUnitsWithLogs) whe
 -- Imports
 --------------------------------------------------------------------------------
 
+-- import Cardano.Ledger.Plutus.TxInfo (transExUnits)
+
 import Cardano.Ledger.Alonzo.Core
 import Cardano.Ledger.Alonzo.Plutus.Context (EraPlutusContext (..), LedgerTxInfo (..))
 import Cardano.Ledger.Alonzo.Plutus.Evaluate (TransactionScriptFailure (..))
 import Cardano.Ledger.Alonzo.Scripts (ExUnits, lookupPlutusScript, plutusScriptLanguage, toAsIx)
 import Cardano.Ledger.Alonzo.TxWits (unRedeemersL)
 import Cardano.Ledger.Alonzo.UTxO (AlonzoScriptsNeeded (..))
-import Cardano.Ledger.Plutus.CostModels (costModelsValid)
+import Cardano.Ledger.Plutus.CostModels (costModelsValid, getEvaluationContext)
 import Cardano.Ledger.Plutus.Evaluate (
-    PlutusWithContext,
-    evaluatePlutusWithContext,
+    PlutusWithContext (..),
  )
+import Cardano.Ledger.Plutus.Language (PlutusLanguage (..), PlutusRunnable)
 import Cardano.Ledger.Plutus.TxInfo (exBudgetToExUnits)
 import Cardano.Ledger.State (EraUTxO (..), ScriptsProvided (..), UTxO (..))
 import Cardano.Slotting.EpochInfo (EpochInfo)
@@ -42,22 +48,54 @@ import Cardano.Ledger.Conway.Scripts qualified as Conway
 -- Evaluators
 --------------------------------------------------------------------------------
 
+-- NOTE: There is also debugPlutusUnbounded in
+-- cardano-ledger:Cardano.Ledger.Plutus.Evaluate. It may be possible to use it
+-- to replace a lot of code from this module.
+--
+-- TODO: Explore "debugPlutusUnbounded".
+
 note :: e -> Maybe a -> Either e a
 note _ (Just x) = Right x
 note e Nothing = Left e
+
+withRunnablePlutusWithContext ::
+  PlutusWithContext ->
+  -- | Handle the decoder failure
+  (P.EvaluationError -> a) ->
+  (forall l. PlutusLanguage l => PlutusRunnable l -> PlutusArgs l -> a) ->
+  a
+withRunnablePlutusWithContext PlutusWithContext {pwcProtocolVersion, pwcScript, pwcArgs} onError f =
+  case pwcScript of
+    Right pr -> f pr pwcArgs
+    Left plutus ->
+      case decodePlutusRunnable pwcProtocolVersion plutus of
+        Right pr -> f pr pwcArgs
+        Left err -> onError (P.CodecError err)
+
+evaluatePlutusWithContextBudget ::
+  P.VerboseMode ->
+  PlutusWithContext ->
+  ([Text], Either P.EvaluationError P.ExBudget)
+evaluatePlutusWithContextBudget mode pwc@PlutusWithContext {..} =
+  withRunnablePlutusWithContext pwc (([],) . Left) $
+    -- NOTE: evaluatePlutusRunnableBudget is used for testing primarily and runs
+    -- without any budget restrictions.
+    evaluatePlutusRunnableBudget
+      pwcProtocolVersion
+      mode
+      (getEvaluationContext pwcCostModel)
 
 evalPwcExUnitsWithLogs ::
     PlutusWithContext ->
     ExUnits ->
     PwcExecutionResult era
 evalPwcExUnitsWithLogs pwc exUnits =
-    case evaluatePlutusWithContext P.Verbose pwc of
+    case evaluatePlutusWithContextBudget P.Verbose pwc of
         (logs, Left err) -> Left $ ValidationFailure exUnits err logs pwc
         (logs, Right exBudget) ->
             note (IncompatibleBudget exBudget) $
                 (pwc,logs,) <$> exBudgetToExUnits exBudget
 
-{- FOURMOLU_DISABLE -}
 evalTxExUnitsWithLogs ::
     forall era.
     ( AlonzoEraTx era
@@ -83,7 +121,6 @@ evalTxExUnitsWithLogs ::
     --     Unlike `evalTxExUnits`, this function also returns evaluation logs, useful for
     --     debugging.
     RedeemerReportWithLogs era
-{- FOURMOLU_ENABLE -}
 evalTxExUnitsWithLogs ssi pp tx utxo epochInfo systemStart = Map.mapWithKey findAndCount rdmrs
   where
     keyedByPurpose (plutusPurpose, _) = hoistPlutusPurpose toAsIx plutusPurpose

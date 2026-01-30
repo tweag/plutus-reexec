@@ -60,22 +60,38 @@ run Options{..} = do
 
 generateScriptsExample :: IO ()
 generateScriptsExample = do
+    -- NOTE: # is the identifier used in str for string interpolation. Example
+    -- [str|Hello, #{world}|].
+    --
+    -- We can escape this using ##. # at the end of the string removes the
+    -- newline. So we use ## if # is at the end.
     putStrLn
-        [str|scripts:
-  # The script hash of the script on-chain that we want to substitute.
-  # In this example it's just a random hash, so please replace with your own.
-  - script_hash: \"b6a7467ea1deb012808ef4e87b5ff371e85f7142d7b356a40d9b42a0\"
-
-    # Script name or alias for easier identification (optional).
-    name: always_succeeds
-
-    # The script that we want to run instead of the original script identified by the script hash above,
-    # in this case it's AlwaysSucceeds.
-    cborHex: \"4e4d01000033222220051200120011\"
-
+        [str|
 # Example of the starting point:
 # start:
 #   tag: ChainPoint
 #   slot: 11617
 #   blockHash: 9b65597bb73e21d5b58a1f5958f8b95324b142727efb2746c577998e93df3463
+
+scripts:
+  # The target script hash that we want to re-run locally.
+  # In this example it's just a random hash, so please replace with your own.
+  - script_hash: "22734734b6b0410cf4a0e3bd731fb98c55ac2b2a27b1eecb8d3b438c"
+    # List of substitution scripts we want to run on wherever the target script
+    # is found.
+    substitutions:
+      - # Name of the substitution script for easier identification (optional)
+        name: "Local Policy"
+        # The hash of the substitution script. The plutus-script-reexecutor will
+        # check and fail if the hash does not match.
+        ##
+        # Tip: Leave this as an empty string and let plutus-script-reexecutor
+        # error out with the expected script hash.
+        hash: "6bfbd8fc6567153cbaacdcd0ee9fff9e69ba2a0eb62c129b303ade19"
+        source:
+          # The source of the substitution script. This can either be a "path"
+          # or a "cbor".
+          cbor: "4e4d01000033222220051200120011"
+          # path: "local-config/policy-debug.plutus"
+
 |]

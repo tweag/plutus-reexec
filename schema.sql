@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS execution_context (
   cost_model_params_id INTEGER NOT NULL REFERENCES cost_model_params (params_id),
 
   transaction_hash BLOB NOT NULL,
+  -- TODO:
+  -- 1. Rename this to target_script_hash.
+  -- 2. Add substituted_script_hash as another column.
   script_hash BLOB NOT NULL,
   script_name TEXT,
 

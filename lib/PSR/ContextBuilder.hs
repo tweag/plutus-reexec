@@ -22,7 +22,6 @@ import Cardano.Ledger.Alonzo qualified as Alonzo
 import Control.Exception (evaluate)
 import Control.Monad (guard)
 import Data.Foldable (foldl', toList)
-import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Map.Ordered qualified as OMap
 import Data.Maybe (mapMaybe)
@@ -74,7 +73,7 @@ data BlockContext era where
         , -- NOTE: Use C.convert to get C.ShelleyBasedEra
           ctxAlonzoEraOnwards :: C.AlonzoEraOnwards era
         , ctxTransactions :: [C.Tx era]
-        , ctxInputUtxoMap :: C.UTxO era
+        , ctxBlockUtxoMap :: C.UTxO era
         , -- NOTE: The protocol parameters (and hence the cost models) may change
           -- in a running node. It may be okay to poll this at the block boundary.
           ctxPParams :: L.PParams (C.ShelleyLedgerEra era)
@@ -107,11 +106,16 @@ mkBlockContext metrics bh conn prevCp era txs = do
 -- Transaction Context
 --------------------------------------------------------------------------------
 
+projectTxUtxoMap :: C.UTxO era -> C.Tx era -> C.UTxO era
+projectTxUtxoMap (C.UTxO utxoMap) tx =
+    C.UTxO $ Map.restrictKeys utxoMap $ getTxInSet tx
+
 data TransactionContext era where
     TransactionContext ::
         { ctxBlockHeader :: C.BlockHeader
         , ctxTransaction :: C.Tx era
-        , ctxRelevantScripts :: Map.Map C.ScriptHash [ResolvedScript]
+        , -- , ctxTxUtxoMap :: C.UTxO era
+          ctxRelevantScripts :: Map.Map C.ScriptHash [ResolvedScript]
         , ctxTransactionExecutionResult :: TransactionExecutionResult
         } ->
         TransactionContext era
@@ -124,12 +128,6 @@ getMintPolicies =
         . C.txMintValue
         . C.getTxBodyContent
         . C.getTxBody
-
-getInputScriptAddrs ::
-    Map C.TxIn (C.TxOut C.CtxUTxO era) -> C.Tx era -> Set C.ScriptHash
-getInputScriptAddrs utxoMap tx =
-    let utxoList = Map.elems $ Map.restrictKeys utxoMap $ getTxInSet tx
-     in Set.fromList $ mapMaybe getTxOutScriptAddr utxoList
 
 getCertifyingScriptHashes :: C.Tx era -> Set C.ScriptHash
 getCertifyingScriptHashes tx =
@@ -172,16 +170,17 @@ getRewardingScriptHashes tx =
 
 getNonEmptyIntersection ::
     ConfigMap ->
-    BlockContext era ->
+    C.UTxO era ->
     C.Tx era ->
     Maybe (Map.Map C.ScriptHash [ResolvedScript])
-getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
-    let inpUtxoMap = C.unUTxO ctxInputUtxoMap
+getNonEmptyIntersection ConfigMap{..} txUtxoMap tx = do
+    let inpUtxos = Map.elems $ C.unUTxO txUtxoMap
+        inpScriptAddrs = Set.fromList $ mapMaybe getTxOutScriptAddr inpUtxos
         interestingScripts =
             Map.restrictKeys cmScripts $
                 Set.unions
                     [ getMintPolicies tx
-                    , getInputScriptAddrs inpUtxoMap tx
+                    , inpScriptAddrs
                     , getCertifyingScriptHashes tx
                     , getRewardingScriptHashes tx
                     ]
@@ -207,8 +206,9 @@ mkTransactionContext metrics cm bc tx =
 mkTransactionContext' ::
     ConfigMap -> BlockContext era -> C.Tx era -> Maybe (TransactionContext era)
 mkTransactionContext' cm bc tx = do
-    nei <- getNonEmptyIntersection cm bc tx
-    let eres = evaluateTransaction bc tx nei
+    let txUtxoMap = projectTxUtxoMap (ctxBlockUtxoMap bc) tx
+    nei <- getNonEmptyIntersection cm txUtxoMap tx
+    let eres = evaluateTransaction bc txUtxoMap tx nei
     pure $ TransactionContext bc.ctxBlockHeader tx nei eres
 
 --------------------------------------------------------------------------------
@@ -218,10 +218,11 @@ mkTransactionContext' cm bc tx = do
 evaluateTransaction ::
     forall era.
     BlockContext era ->
+    C.UTxO era ->
     C.Tx era ->
     Map.Map C.ScriptHash [ResolvedScript] ->
     TransactionExecutionResult
-evaluateTransaction BlockContext{..} (C.ShelleyTx era tx) scriptMap = do
+evaluateTransaction BlockContext{..} txUtxoMap (C.ShelleyTx era tx) scriptMap = do
     case ctxAlonzoEraOnwards of
         C.AlonzoEraOnwardsAlonzo -> runEvaluation
         C.AlonzoEraOnwardsBabbage -> runEvaluation
@@ -237,7 +238,10 @@ evaluateTransaction BlockContext{..} (C.ShelleyTx era tx) scriptMap = do
             ctxSysStart
             (C.toLedgerEpochInfo ctxEraHistory)
             (C.LedgerProtocolParameters ctxPParams)
-            ctxInputUtxoMap
+            -- NOTE: Using the txUtxoMap here instead of ctxBlockHeader provides
+            -- no functional difference. It *may* improve evaluation speed as
+            -- txUtxoMap is significantly smaller than ctxBlockUtxoMap.
+            txUtxoMap
             tx
 
     -- TODO: Report this error to the user.

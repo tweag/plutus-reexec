@@ -131,6 +131,21 @@ getInputScriptAddrs utxoMap tx =
     let utxoList = Map.elems $ Map.restrictKeys utxoMap $ getTxInSet tx
      in Set.fromList $ mapMaybe getTxOutScriptAddr utxoList
 
+getProposingScriptHashes :: C.Tx era -> Set C.ScriptHash
+getProposingScriptHashes tx =
+    case C.txProposalProcedures (C.getTxBodyContent (C.getTxBody tx)) of
+        Nothing -> Set.empty
+        Just (C.Featured _ C.TxProposalProceduresNone) -> Set.empty
+        Just (C.Featured _ (C.TxProposalProcedures proMap)) ->
+            Set.fromAscList . mapMaybe unwrapAndExtract . map fst $
+                OMap.toAscList proMap
+  where
+    -- unwrapAndExtract :: C.ProposalProcedure era -> Maybe C.ScriptHash
+    unwrapAndExtract pp =
+        case L.raCredential (L.pProcReturnAddr pp) of
+            L.ScriptHashObj hash -> Just $ C.fromShelleyScriptHash hash
+            L.KeyHashObj _ -> Nothing
+
 getCertifyingScriptHashes :: C.Tx era -> Set C.ScriptHash
 getCertifyingScriptHashes tx =
     case C.txCertificates (C.getTxBodyContent (C.getTxBody tx)) of
@@ -184,6 +199,7 @@ getNonEmptyIntersection ConfigMap{..} BlockContext{..} tx = do
                     , getInputScriptAddrs inpUtxoMap tx
                     , getCertifyingScriptHashes tx
                     , getRewardingScriptHashes tx
+                    , getProposingScriptHashes tx
                     ]
     guard (not $ Map.null interestingScripts)
     pure interestingScripts
@@ -194,6 +210,7 @@ mkTransactionContext ::
     ContextBuilderMetrics -> ConfigMap -> BlockContext era -> C.Tx era -> IO (Maybe (TransactionContext era))
 mkTransactionContext metrics cm bc tx =
     observeDuration metrics.mkTransactionContext_runtime $ do
+        print (show (getProposingScriptHashes tx))
         let res = mkTransactionContext' cm bc tx
         -- Ensure the result is actually forced so the metrics are accurate
         !_ <- evaluate (maybe () forceExecutionResults res)

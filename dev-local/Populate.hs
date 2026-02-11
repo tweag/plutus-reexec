@@ -17,6 +17,12 @@ module Populate (
     buildStakeAddress,
     genRegCertStakeAddress,
     genDeregCertStakeAddress,
+    govDrepRegCert,
+    hashAnchorData,
+    govCreateInfo,
+    govCreateTreasureWithdrawal,
+    keygenStake,
+    voteCreate,
     -- Globals
     env_LOCAL_CONFIG_DIR,
     env_POPULATE_WORK_DIR,
@@ -152,6 +158,9 @@ opt a b = (a, Just (quoted b))
 flg :: String -> CmdOption
 flg a = (a, Nothing)
 
+optTestnet :: CmdOption
+optTestnet = flg "testnet"
+
 optNetwork :: CmdOption
 optNetwork = opt "testnet-magic" env_CARDANO_TESTNET_MAGIC
 
@@ -265,6 +274,41 @@ getUtxoListAt walletAddr =
         & nonEmptyLines
         & Stream.fold Fold.toList
 
+hashAnchorData :: [CmdOption] -> IO ()
+hashAnchorData args =
+    runCmd
+        "cardano-cli hash anchor-data"
+        args
+        & drain
+
+govDrepRegCert :: [CmdOption] -> IO ()
+govDrepRegCert args =
+    runCmd
+        "cardano-cli conway governance drep registration-certificate"
+        args
+        & drain
+
+voteCreate :: [CmdOption] -> IO ()
+voteCreate args =
+    runCmd
+        "cardano-cli conway governance vote create"
+        args
+        & drain
+
+govCreateTreasureWithdrawal :: [CmdOption] -> IO ()
+govCreateTreasureWithdrawal args =
+    runCmd
+        "cardano-cli conway governance action create-treasury-withdrawal"
+        (optTestnet : args)
+        & drain
+
+govCreateInfo :: [CmdOption] -> IO ()
+govCreateInfo args =
+    runCmd
+        "cardano-cli conway governance action create-info"
+        (optTestnet : args)
+        & drain
+
 nullUtxo :: String -> IO Bool
 nullUtxo utxo =
     runCmd
@@ -281,6 +325,15 @@ keygen :: FilePath -> FilePath -> IO ()
 keygen vkey skey =
     runCmd
         "cardano-cli address key-gen"
+        [ opt "verification-key-file" vkey
+        , opt "signing-key-file" skey
+        ]
+        & drain
+
+keygenStake :: FilePath -> FilePath -> IO ()
+keygenStake vkey skey =
+    runCmd
+        "cardano-cli conway stake-address key-gen"
         [ opt "verification-key-file" vkey
         , opt "signing-key-file" skey
         ]
@@ -358,6 +411,7 @@ data AppEnv = AppEnv
     , stakeAddrFilePath :: FilePath
     , regCertFilePath :: FilePath
     , deregCertFilePath :: FilePath
+    , proposalFilePath :: FilePath
     , numIterations :: Int
     , assetAmount :: String
     }
@@ -370,6 +424,7 @@ makeAppEnv scriptsDirName = do
         stakeAddrFilePath = scriptsDirPath </> "script.stake.addr"
         regCertFilePath = scriptsDirPath </> "registration.cert"
         deregCertFilePath = scriptsDirPath </> "deregistration.cert"
+        proposalFilePath = scriptsDirPath </> "action.proposal"
         tokenName = "TEST_TOKEN"
         assetAmount = "100"
         numIterations = 10
@@ -395,6 +450,7 @@ makeAppEnv scriptsDirName = do
             , stakeAddrFilePath = stakeAddrFilePath
             , regCertFilePath = regCertFilePath
             , deregCertFilePath = deregCertFilePath
+            , proposalFilePath = proposalFilePath
             }
 
 finalizeCurrentTransaction :: IO ()
@@ -482,6 +538,8 @@ runBurn AppEnv{..} lockedUtxo = do
 
 runCertifyReg :: AppEnv -> IO ()
 runCertifyReg AppEnv{..} = do
+    ensureBlankWorkDir
+
     printStep "Certify - Reg"
 
     faucetUtxo <- getFirstUtxoAt faucetAddr
@@ -501,6 +559,8 @@ runCertifyReg AppEnv{..} = do
 
 runCertifyDereg :: AppEnv -> IO ()
 runCertifyDereg AppEnv{..} = do
+    ensureBlankWorkDir
+
     printStep "Certify - Dereg"
 
     faucetUtxo <- getFirstUtxoAt faucetAddr
@@ -518,8 +578,32 @@ runCertifyDereg AppEnv{..} = do
     waitTillExists $ fstOutput txId
     printVar "runCertifyDereg.txId" txId
 
+runVoterReg :: AppEnv -> IO ()
+runVoterReg AppEnv{..} = do
+    ensureBlankWorkDir
+
+    printStep "Voter - Reg"
+
+    let certFile = env_LOCAL_CONFIG_DIR </> "tracing-plutus-v3/drep.cert"
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "tx-in-collateral" faucetUtxo
+        , opt "change-address" faucetAddr
+        , opt "certificate-file" certFile
+        , opt "certificate-script-file" policyFilePath
+        , opt "certificate-redeemer-value" (13 :: Int)
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    finalizeCurrentTransaction
+    txId <- getTransactionId env_TX_SIGNED
+    waitTillExists $ fstOutput txId
+    printVar "runVoterReg.txId" txId
+
 runReward :: AppEnv -> IO ()
 runReward AppEnv{..} = do
+    ensureBlankWorkDir
+
     printStep "Reward"
 
     faucetUtxo <- getFirstUtxoAt faucetAddr
@@ -540,6 +624,52 @@ runReward AppEnv{..} = do
     waitTillExists $ fstOutput txId
     printVar "runReward.txId" txId
 
+runProposal :: AppEnv -> IO String
+runProposal AppEnv{..} = do
+    ensureBlankWorkDir
+    printStep "Proposal"
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "change-address" faucetAddr
+        , opt "proposal-file" proposalFilePath
+        , -- , opt "proposal-script-file" policyFilePath
+          -- , opt "proposal-redeemer-value" (11 :: Int)
+          opt "out-file" env_TX_UNSIGNED
+        ]
+    finalizeCurrentTransaction
+    txId <- getTransactionId env_TX_SIGNED
+    waitTillExists $ fstOutput txId
+    printVar "runProposal.txId" txId
+    pure txId
+
+runVoting :: AppEnv -> String -> IO ()
+runVoting AppEnv{..} govActTxid = do
+    ensureBlankWorkDir
+    printStep "Voting"
+    faucetUtxo <- getFirstUtxoAt faucetAddr
+    policyHash <- getPolicyId policyFilePath
+    voteCreate
+        [ flg "yes"
+        , opt "governance-action-tx-id" govActTxid
+        , opt "governance-action-index" (0 :: Int)
+        , opt "drep-script-hash" policyHash
+        , opt "out-file" (env_POPULATE_WORK_DIR </> "script.vote")
+        ]
+    buildTransaction
+        [ opt "tx-in" faucetUtxo
+        , opt "tx-in-collateral" faucetUtxo
+        , opt "change-address" faucetAddr
+        , opt "vote-file" (env_POPULATE_WORK_DIR </> "script.vote")
+        , opt "vote-script-file" policyFilePath
+        , opt "vote-redeemer-value" (11 :: Int)
+        , opt "out-file" env_TX_UNSIGNED
+        ]
+    finalizeCurrentTransaction
+    txId <- getTransactionId env_TX_SIGNED
+    waitTillExists $ fstOutput txId
+    printVar "runVoting.txId" txId
+
 testScriptTriggerWith :: AppEnv -> IO ()
 testScriptTriggerWith appEnv = do
     utxo0 <- fstOutput <$> runMint appEnv
@@ -551,8 +681,14 @@ testScriptTriggerWith appEnv = do
 
 testScriptTrigger :: IO ()
 testScriptTrigger = do
-    testScriptTriggerWith =<< makeAppEnv "tracing-plutus-v2"
-    testScriptTriggerWith =<< makeAppEnv "tracing-plutus-v3"
+    -- testScriptTriggerWith =<< makeAppEnv "tracing-plutus-v2"
+
+    v3Env <- makeAppEnv "tracing-plutus-v3"
+    -- testScriptTriggerWith v3Env
+    runCertifyReg v3Env
+    runVoterReg v3Env
+    runProposal v3Env >>= runVoting v3Env
+    runCertifyDereg v3Env
 
 --------------------------------------------------------------------------------
 -- Escrow

@@ -19,6 +19,7 @@ import Options.Applicative hiding (str)
 import Populate
 import Streamly.Console.Stdio qualified as Console
 import Streamly.Unicode.String (str)
+import System.Directory (withCurrentDirectory)
 import System.Environment (setEnv)
 import System.FilePath ((</>))
 import System.IO (BufferMode (..), hSetBuffering, stderr, stdout)
@@ -163,6 +164,41 @@ scripts:
 #{escrowV2}
 |]
 
+createProposalConfig :: String -> IO ()
+createProposalConfig scriptsDirName =
+    withCurrentDirectory scriptsDirPath $ do
+        -- NOTE: create-info does not trigger the proposal script so we use a treasure
+        -- withdrawal instead.
+        -- NOTE: key-reg-deposit-amt == 1_000_000 comes from the ".dRepDeposit"
+        -- in the protocol-parameters.
+        policyHash <- getPolicyId "policy.plutus"
+        govDrepRegCert
+            [ opt "drep-script-hash" policyHash
+            , opt "key-reg-deposit-amt" (1_000_000 :: Int)
+            , opt' "out-file" "drep.cert"
+            ]
+        -- NOTE: 1_000_000 comes from the ".govActionDeposit" in the
+        -- protocol-parameters.
+        govCreateTreasureWithdrawal
+            [ opt "governance-action-deposit" (1_000_000 :: Int)
+            , opt' "deposit-return-stake-script-file" "policy.plutus"
+            , opt' "anchor-url" anchorUrl
+            , opt' "anchor-data-hash" anchorHash
+            , opt' "funds-receiving-stake-script-file" "policy.plutus"
+            , opt "transfer" (100_000 :: Int)
+            , opt' "out-file" "action.proposal"
+            ]
+        govDrepRegCert
+            [ opt "drep-script-hash" policyHash
+            , opt "key-reg-deposit-amt" (1_000_000 :: Int)
+            , opt' "out-file" "drep.cert"
+            ]
+  where
+    anchorUrl = "https://raw.githubusercontent.com/tweag/plutus-reexec/61e7ccd35bac5613c6a7cbe40b74278034c0a802/docs/proposal.md"
+    anchorHash = "6323dfff0b94a16e1964235c9625798e476dfd88879240e94d891066b14d4a90"
+    opt' a b = opt a (b :: String)
+    scriptsDirPath = env_LOCAL_CONFIG_DIR </> scriptsDirName
+
 createTracingConfig ::
     (IsPlutusScriptLanguage lang) =>
     String ->
@@ -230,6 +266,7 @@ createConfig = do
         ReleaseV3.tracingScript
         DebugV3.tracingScript
         DebugV3.tracingScript
+    createProposalConfig "tracing-plutus-v3"
 
     createTracingConfig
         "tracing-plutus-v2"

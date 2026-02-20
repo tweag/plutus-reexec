@@ -10,7 +10,8 @@ module PSR.ContextBuilder (
     ContextBuilderMetrics,
     initialiseContextBuilderMetrics,
     getSpendProjectedUtxoMap,
-    selectScriptTriggeredTxs,
+    ProcessBlockTxList (..),
+    processBlockTxList,
 ) where
 
 --------------------------------------------------------------------------------
@@ -202,20 +203,37 @@ transactionScan confHashes initialUtxoMap =
                 Set.union nonSpendIntersectingPolicies spendIntersectingPolicies
          in (tx, allIntersectingPolicies)
 
+data ProcessBlockTxList era = ProcessBlockTxList
+    { pbtFinalUtxoState :: Map C.TxIn C.ScriptHash
+    , pbtFullTransactionListLength :: Int
+    , pbtFilteredTransactionList :: [C.Tx era]
+    , pbtFilteredTransactionListLength :: Int
+    }
+
 -- QUESTION: Does it make sense to specialize the folds to Identity?
-selectScriptTriggeredTxs ::
+processBlockTxList ::
     Set C.ScriptHash ->
     Map C.TxIn C.ScriptHash ->
     [C.Tx era] ->
-    (Map C.TxIn C.ScriptHash, [C.Tx era])
-selectScriptTriggeredTxs confHashes initialUtxoMap txList =
+    ProcessBlockTxList era
+processBlockTxList confHashes initialUtxoMap txList =
     Stream.fromList txList
         & Stream.postscanl (transactionScan confHashes initialUtxoMap)
         & fmap (second maybeIntersection)
         & Stream.fold
-            ( Fold.tee
-                (maybe initialUtxoMap fst <$> Fold.latest)
-                (Fold.lmap snd (Fold.catMaybes Fold.toList))
+            ( Fold.teeWith
+                uncurry
+                ( Fold.teeWith
+                    ProcessBlockTxList
+                    (maybe initialUtxoMap fst <$> Fold.latest)
+                    Fold.length
+                )
+                ( Fold.lmap snd $
+                    -- NOTE: We can use Fold.toListRev here to make this more
+                    -- efficient. This will however reverse the order of
+                    -- processing the transactions in a single block.
+                    Fold.catMaybes (Fold.tee Fold.toList Fold.length)
+                )
             )
         & runIdentity
   where

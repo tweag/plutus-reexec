@@ -233,10 +233,6 @@ streamChainSyncEvents ::
 streamChainSyncEvents conn points =
     Stream.fromCallback (void . forkIO . subscribeToChainSyncEvents conn points)
 
-countTransactions :: Maybe Block -> Int
-countTransactions Nothing = 0
-countTransactions (Just (Block _ _ txs)) = length txs
-
 streamBlocks :: StreamingMetrics -> Events -> CM.ConfigMap -> [C.ChainPoint] -> Stream IO (C.ChainPoint, Block)
 streamBlocks metrics events CM.ConfigMap{..} points =
     streamChainSyncEvents cmLocalNodeConn points
@@ -244,9 +240,6 @@ streamBlocks metrics events CM.ConfigMap{..} points =
         & Stream.trace (traceChainSyncEvent events)
         & fmap getEventBlock
         & Stream.postscanl unshiftFst
-        -- TODO: Can we filter here to remove any block that doesn't reference
-        -- any scripts we care about?
-        & Stream.trace (\(_, txs) -> incCounterBy metrics.tx_since_start (countTransactions txs))
         & Stream.mapMaybe (\(a, b) -> (a,) <$> b)
 
 streamTransactionContext ::
@@ -291,8 +284,11 @@ mainLoop events cm@CM.ConfigMap{..} points = do
                     & Stream.fold Fold.drain
             withAlonzoEra era = do
                 prevUtxoMap <- getUtxoMap
-                let (newUtxoMap, selectedTxs) =
-                        selectScriptTriggeredTxs confHashes prevUtxoMap txList
+                let ProcessBlockTxList{..} =
+                        processBlockTxList confHashes prevUtxoMap txList
+                    newUtxoMap = pbtFinalUtxoState
+                    selectedTxs = pbtFilteredTransactionList
+                incCounterBy metrics.tx_since_start pbtFullTransactionListLength
                 -- TODO: It is possible to maintain this count at all times. We
                 -- should do that instead of going through our map each and
                 -- every time.

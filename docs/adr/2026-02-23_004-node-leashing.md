@@ -3,12 +3,12 @@ slug: 4
 title: | 
   4. Node Leashing
 authors: [tweag-ev-ak]
-tags: [Proposed]
+tags: [Accepted]
 ---
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
